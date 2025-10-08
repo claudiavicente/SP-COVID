@@ -1,0 +1,185 @@
+---
+title: "Project report 1"
+author: "Clàudia Vicente"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    number_sections: true
+    toc: true
+    toc_depth: 3
+    toc_float: true
+    fig_caption: true
+    keep_md: true
+    df_print: paged
+editor_options: 
+  markdown: 
+    wrap: sentence
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, dev="svg",  out.width = "100%", fig.align = 'center', 
+                      message = FALSE, warning = FALSE)
+options(width = 1200)
+```
+
+# Introduction
+
+This report contain the overview and exploration of the dataset and the analysis that have been previously performed for the project.
+
+# Libraries
+
+```{r}
+library(Seurat)
+library(tidyverse)
+library(dplyr)
+library(ggplot2)
+library(DataExplorer)
+library(summarytools)
+```
+
+# Parameters
+
+```{r}
+set.seed(123)
+```
+
+# snRNA-seq
+
+First, we are going to take a look at the snRNA-seq data after the pre-processing.
+
+## Load data
+
+```{r}
+se <- "data/snRNAseq/lung_autopsy_all.rds" %>%
+  here::here() %>%
+  readRDS(.)
+```
+
+## Overview
+
+In the **pre-processing**, the cells with more than 10% of of mitochondrial genes, more than 5,000 genes and doublets were removed. Then, the data was normalized using `NormalizeData()` function with a scale factor of 10,000 and the *LogNormalize* method. The 2,000 most variable features were identified using the `FindVariableFeatures()` function with the *vst* method, and cell cycle scores were calculated using the `CellCycleScoring()` function. Batch effect was then removed with `IntegrateData()` function using the donor as batch variable.
+After scaling the data with the `ScaleData()` function, a PCA was performed using the `RunPCA()` function and the first 20 PCs were used to find neighbors with the `FindNeighbors()` function and to compute UMAP coordinates with the `RunUMAP()` function. Finally, clustering was performed using the `FindClusters()` function with the default parameters and the dataset by [Travaglini et al.](https://doi.org/10.1101/742320) was used to score cell types:
+
+```{r}
+DimPlot(se, group.by='predicted.id', label=TRUE, repel=TRUE) + NoLegend()
+```
+
+The data consists of `r length(unique(meta$orig.ident))` samples from different donors from lung autopsies, consisting of 6 COVID-19 cases and 2 controls. The data dimensions are `r ncol(se)` cells by `r nrow(se@assays$RNA@counts)` genes.
+
+## Metadata descriptive analysis
+
+```{r}
+meta <- se@meta.data
+plot_intro(meta)
+head(meta)
+
+# metadata of interest
+categorical <- c("predicted.id", "Phase", "condition", "origin", "donor")
+continuous <- c("prediction.score.max", "pct.mito", "pct.ribo", "pct.SCoV2",
+  "nCount_RNA", "nFeature_RNA", "scrublet_score")
+```
+
+### Continuous variables
+
+```{r}
+descr(meta[,continuous])
+plot_histogram(meta[,continuous], geom_histogram_args = list("fill" = "#a6cee3", "color" = "#1f78b4"), ggtheme = theme_minimal())
+FeaturePlot(
+    se,
+    features = continuous)
+```
+
+### Categorical variables
+
+```{r}
+update_geom_defaults("bar", list(fill = "#a6cee3", color = "#1f78b4"))
+plot_bar(meta[,categorical], ggtheme = theme_minimal())
+DimPlot(
+    se,
+    group.by = categorical,
+    label = FALSE) & NoLegend()
+```
+
+
+### SARS-CoV-2 positive cells
+do descriptive analysis of scov2 by condition and cell type
+
+
+```{r}
+FeaturePlot(
+    se,
+    features = "pct.SCoV2", cells.highlight = WhichCells(se, expression = pct.SCoV2 > 0),
+    cols = c("lightgrey", "red"),
+    pt.size = 0.5) +
+    labs(title = "SARS-CoV-2 positive cells")
+```
+
+```{r}
+lapply(unique(se$condition), function(i) {
+    VlnPlot(
+        se[, se$condition == i],
+        features = "pct.SCoV2",
+        group.by = "predicted.id") +
+        NoLegend() +
+        labs(title = glue("{i} - pct.SCoV2"))
+})
+```
+
+```{r}
+```
+
+```{r}
+```
+
+```{r}
+```
+
+```{r}
+```
+
+```{r}
+```
+
+```{r}
+```
+
+```{r}
+```
+
+```{r}
+```
+
+```{r}
+```
+
+```{r}
+```
+
+```{r}
+```
+
+```{r}
+```
+
+```{r}
+```
+
+```{r}
+```
+
+```{r}
+```
+
+```{r}
+```
+
+```{r}
+```
+
+```{r}
+```
+
+```{r}
+```
+
