@@ -9,7 +9,6 @@ output:
     toc_depth: 3
     toc_float: true
     fig_caption: true
-    keep_md: true
     df_print: paged
 editor_options: 
   markdown: 
