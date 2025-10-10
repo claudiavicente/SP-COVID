@@ -1,14 +1,16 @@
 ---
-title: "Project report 1"
+title: "Project Report 1"
 author: "Clàudia Vicente"
 date: "`r format(Sys.time(), '%d %B, %Y')`"
 output:
-  html_document:
+  bookdown::html_document2:
+    theme: cosmo
+    highlight: pygments
     number_sections: true
+    global_numbering: true  
     toc: true
     toc_depth: 3
     toc_float: true
-    fig_caption: true
     df_print: paged
 editor_options: 
   markdown: 
@@ -17,10 +19,24 @@ editor_options:
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE, dev="svg",  out.width = "100%", fig.align = 'center', 
-                      message = FALSE, warning = FALSE)
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE,   tidy = TRUE, tidy.opts = list(width.cutoff = 60),
+                      dev="svg",  out.width = "100%", fig.align = 'center',
+                      fig.path = here::here(paste0("output/plots/",
+                                                   tools::file_path_sans_ext(basename(rstudioapi::getSourceEditorContext()$path)),
+                                                   "_files/")
+                                            )
+                      )
 options(width = 1200)
 ```
+
+```{r, eval = FALSE, include = FALSE}
+rmarkdown::render(
+  "1-report.Rmd",
+  output_format = NULL,
+  output_dir = here("output/html")
+)
+```
+
 
 # Introduction
 
@@ -62,15 +78,14 @@ meta <- se@meta.data
 ## Data overview & exploration
 
 The data consists of `r length(unique(meta$orig.ident))` samples from different donors from lung autopsies, consisting of 6 COVID-19 cases stratified in different stages and 2 controls. The data dimensions are `r ncol(se)` cells by `r nrow(se@assays$RNA@counts)` genes.
-In the table below \@ref(tab:exp), we can see a summary of the experimental design and the number of cells per donor:
+In Table \@ref(tab:exp), we can see a summary of the experimental design and the number of cells per donor:
 
-```{r exp}
+```{r exp, echo = FALSE, tab.cap = "Summary of the experimental design and number of cells per donor."}
 tab <- meta %>%
   group_by(donor, condition) %>%
   summarise(n_cells = n()) %>%
   ungroup() %>%
   arrange(condition, donor)
-
 tab <- rbind(tab, c("Total", "", sum(tab$n_cells)))
 colnames(tab) <- c("Donor", "Stage", "Nº cells")
 tab$`Nº cells` <- as.numeric(tab$`Nº cells`)
@@ -82,24 +97,20 @@ s_cols <- setNames(
 c_cols <- rep("", nrow(tab))
 c_cols[1:8] <- spec_color(tab$`Nº cells`[1:8], end = 0.8, option = "A", direction = 1, begin = 0.3)
 
-kable(tab, caption = "Summary of the experimental design and number of cells per donor.", 
-             booktabs = TRUE, escape = FALSE) %>%
-  kable_styling(latex_options = c("hold_position"), 
-                bootstrap_options = c("striped", "hover"), 
-                full_width = TRUE, 
+kable(tab, format = "html", booktabs = TRUE, escape = FALSE) %>%
+  kable_styling(bootstrap_options = c("striped", "hover"), 
+                full_width = FALSE, 
                 position = "center") %>%
   column_spec(1, color = "#404040", bold = TRUE) %>%
   column_spec(2, color = ifelse(tab$Stage == "", "white", s_cols[tab$Stage])) %>%
   column_spec(3, color = c_cols) %>%
-  row_spec(nrow(tab), color = "black", bold = TRUE) %>%
-  kable_paper(full_width = F)
-
+  row_spec(nrow(tab), color = "black", bold = TRUE)
 ```
 
 In the **pre-processing**, the cells with more than 10% of of mitochondrial genes, more than 5,000 genes and doublets were removed. Then, the data was normalized using `NormalizeData()` function with a scale factor of 10,000 and the *LogNormalize* method. The 2,000 most variable features were identified using the `FindVariableFeatures()` function with the *vst* method, and cell cycle scores were calculated using the `CellCycleScoring()` function. Batch effect was then removed with `IntegrateData()` function using the donor as batch variable.
 After scaling the data with the `ScaleData()` function, a PCA was performed using the `RunPCA()` function and the first 20 PCs were used to find neighbors with the `FindNeighbors()` function and to compute UMAP coordinates with the `RunUMAP()` function. Finally, clustering was performed using the `FindClusters()` function with the default parameters and the dataset by [Travaglini et al.](https://doi.org/10.1101/742320) was used to score cell types obtaining the annotation seen in the Figure \@ref(fig:pre).
 
-```{r pre, fig.caption="UMAP of the snRNA-seq data after pre-processing and cell type prediction."}
+```{r pre, fig.cap="UMAP of the snRNA-seq data after pre-processing and cell type prediction."}
 DimPlot(se, group.by='predicted.id', label=TRUE, repel=TRUE, alpha = 0.3) + NoLegend()
 ```
 
@@ -119,26 +130,41 @@ continuous <- c("prediction.score.max", "pct.mito", "pct.ribo", "pct.SCoV2",
 
 Regarding the continuous variables, we can see a summary of them bellow, and their distribution in the histograms (Figure \@ref(fig:histcon)) and UMAP plots (Figure \@ref(fig:featcon)). 
 
-```{r histcon, fig.caption="Histograms of the continuous metadata variables of interest."}
+```{r histcon, fig.cap="Histograms of the continuous metadata variables of interest."}
 descr(meta[,continuous])
 update_geom_defaults("bar", list(fill = "#a6cee3", color = "#1f78b4"))
 plot_histogram(meta[,continuous], ggtheme = theme_minimal())
 ```
 
-```{r featcon, fig.caption="UMAP plots of the continuous metadata variables of interest."}
-FeaturePlot(se, features = continuous, ncol = 2)
+```{r featcon, fig.cap="UMAP plots of the continuous metadata variables of interest.",  dev='svglite', fig.height=10, fig.width=12}
+featcon <- lapply(continuous, function(feature) {
+  FeaturePlot(se, features = feature) + 
+    ggtitle(feature)
+})
+
+wrap_plots(featcon, ncol = 3)
 ```
 
 #### Categorical variables
 
 Regarding the categorical variables, we can their counts by categories in the barplots (Figure \@ref(fig:barcat)) and UMAP plots (Figure \@ref(fig:dimcat)).
 
-```{r barcat, fig.caption="Barplots of the categorical metadata variables of interest."}
+```{r barcat, fig.cap="Barplots of the categorical metadata variables of interest."}
 plot_bar(meta[,categorical], ggtheme = theme_minimal())
 ```
 
-```{r dimcat, fig.caption="UMAP plots of the categorical metadata variables of interest."}
-DimPlot(se, group.by = categorical, label = FALSE, alpha = 0.3) & NoLegend()
+```{r dimcat, fig.cap="UMAP plots of the categorical metadata variables of interest.",  dev='svglite', fig.height=10, fig.width=14}
+dimcat <- lapply(categorical, function(group) {
+  DimPlot(se, group.by = group, label = FALSE, alpha = 0.3) + 
+    ggtitle(group) + NoLegend()
+})
+
+wrap_plots(dimcat, ncol = 3)
+```
+
+#### Bivariate analysis
+
+```{r}
 ```
 
 ### % SARS-CoV-2 exploration
@@ -146,7 +172,7 @@ DimPlot(se, group.by = categorical, label = FALSE, alpha = 0.3) & NoLegend()
 Now, we are going to focus on the SARS-CoV-2 infection, looking at the percentage of SARS-CoV-2 gene expression in the cells. We can start by looking at the % of expression across all cells in general (Figure \@ref(fig:featcov2)).:
 
 
-```{r featcov2, fig.caption="Histogram and UMAP of the distribution of the percentage of SARS-CoV-2 gene expression across all cells."}
+```{r featcov2, fig.cap="Histogram and UMAP of the distribution of the percentage of SARS-CoV-2 gene expression across all cells.", fig.heigth=4, fig.width=12}
 summary(meta$pct.SCoV2)
 p1 <- ggplot(se@meta.data, aes(x = pct.SCoV2)) +
   geom_histogram(fill = "#a6cee3", color = "#1f78b4", bins = 50) +
@@ -156,26 +182,24 @@ p1 <- ggplot(se@meta.data, aes(x = pct.SCoV2)) +
 
 p2 <- FeaturePlot(se, features = "pct.SCoV2")
 
-p1 | p2 
+wrap_plots(p1, p2)
 ```
 
 The majority of the cells have 0% of SARS-CoV-2 gene expression, with a median of 0 and a maximum of `r max(meta$pct.SCoV2)`. However, there are `r sum(meta$pct.SCoV2 > 0)` cells with more than 0% of SARS-CoV-2 gene expression  (`r (sum(meta$pct.SCoV2 > 0)/nrow(meta))*100`%).
 
 #### By condition
  
-From the total of `r sum(meta$pct.SCoV2 > 0)` infected cells, `r (sum(meta$pct.SCoV2 > 0 & meta$condition == "akut")/sum(meta$pct.SCoV2 > 0))*100`% are from the acute stage samples and `r (sum(meta$pct.SCoV2 > 0 & meta$condition == "prolonged")/sum(meta$pct.SCoV2 > 0))*100`% are from the prolonged stage samples. Specifically, as we can see in the Table \@ref(tab:covxcn) there are `r sum(meta$pct.SCoV2 > 0 & meta$condition == "akut")` infected cells, representing `r (sum(meta$pct.SCoV2 > 0 & meta$condition == "akut")/sum(meta$condition == "akut"))*100`% of the cells from the acute stage samples, and `r sum(meta$pct.SCoV2 > 0 & meta$condition == "prolonged")` infected cells, representing `r (sum(meta$pct.SCoV2 > 0 & meta$condition == "prolonged")/sum(meta$condition == "prolonged"))*100`% of the cells from the prolonged stage samples. We can see these differences in the infected cells in the UMAP split by condition in the Figure \@ref(fig:covxcn) 
+From the total of `r sum(meta$pct.SCoV2 > 0)` infected cells, `r (sum(meta$pct.SCoV2 > 0 & meta$condition == "akut")/sum(meta$pct.SCoV2 > 0))*100`% are from the acute stage samples and `r (sum(meta$pct.SCoV2 > 0 & meta$condition == "prolonged")/sum(meta$pct.SCoV2 > 0))*100`% are from the prolonged stage samples. Specifically, as we can see in the Table \@ref(tab:covxcn1) there are `r sum(meta$pct.SCoV2 > 0 & meta$condition == "akut")` infected cells, representing `r (sum(meta$pct.SCoV2 > 0 & meta$condition == "akut")/sum(meta$condition == "akut"))*100`% of the cells from the acute stage samples, and `r sum(meta$pct.SCoV2 > 0 & meta$condition == "prolonged")` infected cells, representing `r (sum(meta$pct.SCoV2 > 0 & meta$condition == "prolonged")/sum(meta$condition == "prolonged"))*100`% of the cells from the prolonged stage samples. We can see these differences in the infected cells in the UMAP split by condition in the Figure \@ref(fig:covxcn2).
 
-```{r}
+```{r covxcn1, echo = FALSE, tab.cap = "Number of cells with SARS-CoV-2 gene expression by disease stage."}
 tab <- table(meta$pct.SCoV2 > 0, meta$condition)
-kable(tab, caption = "Number of cells with SARS-CoV-2 gene expression by disease stage.", 
-             booktabs = TRUE, escape = FALSE) %>%
-  kable_styling(latex_options = c("hold_position"), 
-                bootstrap_options = c("striped", "hover"), 
+kable(tab, format = "html", booktabs = TRUE, escape = FALSE) %>%
+  kable_styling(bootstrap_options = c("striped", "hover"), 
                 full_width = TRUE, 
                 position = "center")
 ```
 
-```{r covxcn, fig.caption="UMAP of the SARS-CoV-2 positive cells by condition."}
+```{r covxcn2, fig.cap="UMAP of the SARS-CoV-2 positive cells by condition.", fig.heigth=4, fig.width=12}
 se_subset <- subset(se, subset = condition %in% c("akut", "prolonged"))
 DimPlot(se_subset,cells.highlight = intersect(colnames(se)[se$pct.SCoV2 > 0], colnames(se_subset)), split.by = "condition",
         cols.highlight = "red", cols = "grey", 
@@ -185,42 +209,46 @@ DimPlot(se_subset,cells.highlight = intersect(colnames(se)[se$pct.SCoV2 > 0], co
 
 #### By cell type
 
-If we take a look to which cell types the infected cells belong to, we can see that the majority of them are macrophages and the alveolar epithelial cells (Type 1), as shown in the Table \@ref(tab:covxct) below. The only cell types that do not have any infected cells are the mucous cells and the myofibroblasts. In the Figure \@ref(fig:covxct) we can see the distribution of the infected cells by cell type in a violin plot. We can appreciate how the cell types that have cells with the highest percentage of SARS-CoV-2 gene expression are the NK, capillary aerocyte and capillary cells, club, and the alveolar epithelial cells (Type 2).
+If we take a look to which cell types the infected cells belong to, we can see that the majority of them are macrophages and the alveolar epithelial cells (Type 1), as shown in the Table \@ref(tab:covxct1) below. The only cell types that do not have any infected cells are the mucous cells and the myofibroblasts. In the Figure \@ref(fig:covxct2) we can see the distribution of the infected cells by cell type in a violin plot. We can appreciate how the cell types that have cells with the highest percentage of SARS-CoV-2 gene expression are the NK, capillary aerocyte and capillary cells, club, and the alveolar epithelial cells (Type 2).
 
-```{r covxct, fig.caption="Violin plots of the distribution of the percentage of SARS-CoV-2 gene expression by cell type."}
+
+```{r covxct1, echo = FALSE, tab.cap = "Number of cells with SARS-CoV-2 gene expression by cell type."}
 tab <- table(meta$pct.SCoV2 > 0, meta$predicted.id)
-kable(tab, caption = "Number of cells with SARS-CoV-2 gene expression by cell type.", 
-             booktabs = TRUE, escape = FALSE) %>%
-  kable_styling(latex_options = c("hold_position"), 
-                bootstrap_options = c("striped", "hover"), 
+kable(tab, format = "html", booktabs = TRUE, escape = FALSE) %>%
+  scroll_box(width = "100%") %>%
+  kable_styling(bootstrap_options = c("striped", "hover"), 
                 full_width = TRUE, 
                 position = "center")
+```
 
+```{r covxct2, fig.cap="Violin plots of the distribution of the percentage of SARS-CoV-2 gene expression by cell type."}
 VlnPlot(se, features = "pct.SCoV2", group.by = "predicted.id", pt.size = 0.1) + NoLegend() + scale_y_continuous(trans = "log1p") +
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
 ```
 
 #### By condition and cell type
 
-Finally, if we look at the infected cells by condition and cell type, we can see in the tables below \@ref(tab:covxctcn) that in the case of cells coming from the prolonged stage samples, we only have an alveolar fibroblast, two capillary cells and a macrophage with SARS-CoV-2 gene expression, any of them with more than 0.25%, while in the acute stage samples we have infected cells in all cell types apart from myofibroblasts.
+Finally, if we look at the infected cells by condition and cell type, we can see in the Tables \@ref(tab:covxctcn1),\@ref(tab:covxctcn∫2) and Figure \@ref(tab:covxctcn) below that in the case of cells coming from the prolonged stage samples, we only have an alveolar fibroblast, two capillary cells and a macrophage with SARS-CoV-2 gene expression, any of them with more than 0.25%, while in the acute stage samples we have infected cells in all cell types apart from myofibroblasts.
 
-```{r covxctcn, fig.caption="Violin plots of the distribution of the percentage of SARS-CoV-2 gene expression by cell type and condition."}
+```{r covxctcn1, echo = FALSE, tab.cap="Number of cells with SARS-CoV-2 gene expression by cell type for samples at the acute stage."}
 tab <-table(meta[meta$condition == "akut", "pct.SCoV2"] > 0, meta[meta$condition == "akut", "predicted.id"])
-kable(tab, caption = "Number of cells with SARS-CoV-2 gene expression by cell type for samples at the acute stage.", 
-             booktabs = TRUE, escape = FALSE) %>%
-  kable_styling(latex_options = c("hold_position"), 
-                bootstrap_options = c("striped", "hover"), 
+kable(tab, format = "html", booktabs = TRUE, escape = FALSE) %>%
+  scroll_box(width = "100%") %>%
+  kable_styling(bootstrap_options = c("striped", "hover"), 
                 full_width = TRUE, 
                 position = "center")
+```
 
+```{r covxctcn2, echo = FALSE, tab.cap="Number of cells with SARS-CoV-2 gene expression by cell type for samples at the prolonged stage."}
 tab <-table(meta[meta$condition == "prolonged", "pct.SCoV2"] > 0, meta[meta$condition == "prolonged", "predicted.id"])
-kable(tab, caption = "Number of cells with SARS-CoV-2 gene expression by cell type for samples at the prolonged stage.", 
-             booktabs = TRUE, escape = FALSE) %>%
-  kable_styling(latex_options = c("hold_position"), 
-                bootstrap_options = c("striped", "hover"), 
+kable(tab, format = "html", booktabs = TRUE, escape = FALSE) %>%
+  scroll_box(width = "100%") %>%
+  kable_styling(bootstrap_options = c("striped", "hover"), 
                 full_width = TRUE, 
                 position = "center")
+```
 
+```{r covxctcn, fig.cap="Violin plots of the distribution of the percentage of SARS-CoV-2 gene expression by cell type and condition."}
 lapply(c("akut", "prolonged"), function(i) {
     VlnPlot(se[, se$condition == i], features = "pct.SCoV2", group.by = "predicted.id", pt.size = 0.1) + NoLegend() + scale_y_continuous(trans = "log1p") +
     theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1)) + labs(title = glue("{i} - pct.SCoV2"))
