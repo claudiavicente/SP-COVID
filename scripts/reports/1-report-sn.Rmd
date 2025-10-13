@@ -1,0 +1,547 @@
+---
+title: "Project Report 1 - snRNA-seq Data Exploration and Annotation"
+author: "Clàudia Vicente"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  bookdown::html_document2:
+    theme: cosmo
+    highlight: pygments
+    number_sections: true
+    global_numbering: true  
+    toc: true
+    toc_depth: 3
+    toc_float: true
+    df_print: paged
+editor_options: 
+  markdown: 
+    wrap: sentence
+  chunk_output_type: inline
+---
+
+# Introduction
+
+This report contain the overview and exploration of the dataset and the analysis that have been previously performed for the project.
+
+```{r setup, include=FALSE}
+set.seed(123)
+source(here::here("misc/paths.R"))
+
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE,   tidy = TRUE, tidy.opts = list(width.cutoff = 60),
+                      dev="svg",  out.width = "100%", fig.align = 'center',
+                      
+                      fig.path = here::here(paste0("{rep_plots}" %>%
+                                                     glue::glue() %>%
+                                                     here::here(),
+                                                   tools::file_path_sans_ext(basename(rstudioapi::getSourceEditorContext()$path)),
+                                                   "_files/")
+                                            )
+                      )
+options(width = 1200)
+```
+
+```{r, eval = FALSE, include = FALSE}
+rmarkdown::render(
+  "1-report-sn.Rmd",
+  output_format = NULL,
+  output_dir = "{rep_html}" %>%
+                        glue::glue() %>%
+                        here::here()
+)
+```
+
+# Libraries
+
+```{r}
+library(Seurat)
+library(tidyverse)
+library(kableExtra)
+library(ggplot2)
+library(DataExplorer)
+library(summarytools)
+library(patchwork)
+library(GGally)
+```
+
+# Exploration
+
+First, we are going to take a look at the snRNA-seq data after the pre-processing.
+
+## Load data
+
+```{r}
+se <- "{sn_dt}/lung_autopsy_all.rds" %>%
+    glue::glue() %>%
+    here::here() %>%
+    readRDS(.)
+
+meta <- se@meta.data
+```
+
+## Data overview
+
+The data consists of `r length(unique(meta$orig.ident))` samples from different donors from lung autopsies, consisting of 6 COVID-19 cases stratified in different stages and 2 controls. The data dimensions are `r ncol(se)` cells by `r nrow(se@assays$RNA@counts)` genes.
+In Table \@ref(tab:exp), we can see a summary of the experimental design and the number of cells per donor:
+
+```{r exp, echo = FALSE, tab.cap = "Summary of the experimental design and number of cells per donor."}
+tab <- meta %>%
+  group_by(donor, condition) %>%
+  summarise(n_cells = n()) %>%
+  ungroup() %>%
+  arrange(condition, donor)
+tab <- rbind(tab, c("Total", "", sum(tab$n_cells)))
+colnames(tab) <- c("Donor", "Stage", "Nº cells")
+tab$`Nº cells` <- as.numeric(tab$`Nº cells`)
+
+s_cols <- setNames(
+  c("#4AE38A", "#168D48","#1F78B4", "#0D542B")[1:length(unique(tab$Stage[tab$Stage != ""]))],
+  unique(tab$Stage[tab$Stage != ""])
+)
+c_cols <- rep("", nrow(tab))
+c_cols[1:8] <- spec_color(tab$`Nº cells`[1:8], end = 0.8, option = "A", direction = 1, begin = 0.3)
+
+kable(tab, format = "html", booktabs = TRUE, escape = FALSE) %>%
+  kable_styling(bootstrap_options = c("striped", "hover"), 
+                full_width = FALSE, 
+                position = "center") %>%
+  column_spec(1, color = "#404040", bold = TRUE) %>%
+  column_spec(2, color = ifelse(tab$Stage == "", "white", s_cols[tab$Stage])) %>%
+  column_spec(3, color = c_cols) %>%
+  row_spec(nrow(tab), color = "black", bold = TRUE)
+```
+
+In the **pre-processing**, the cells with more than 10% of of mitochondrial genes, more than 5,000 genes and doublets were removed. Then, the data was normalized using `NormalizeData()` function with a scale factor of 10,000 and the *LogNormalize* method. The 2,000 most variable features were identified using the `FindVariableFeatures()` function with the *vst* method, and cell cycle scores were calculated using the `CellCycleScoring()` function. Batch effect was then removed with `IntegrateData()` function using the donor as batch variable.
+After scaling the data with the `ScaleData()` function, a PCA was performed using the `RunPCA()` function and the first 20 PCs were used to find neighbors with the `FindNeighbors()` function and to compute UMAP coordinates with the `RunUMAP()` function. Finally, clustering was performed using the `FindClusters()` function with the default parameters and the dataset by [Travaglini et al.](https://doi.org/10.1101/742320) was used to score cell types obtaining the annotation seen in the Figure \@ref(fig:pre).
+
+```{r pre, fig.cap="UMAP of the snRNA-seq data after pre-processing and cell type prediction."}
+DimPlot(se, group.by='predicted.id', label=TRUE, repel=TRUE, alpha = 0.3) + NoLegend()
+```
+
+## Metadata descriptive analysis
+
+Most of the metadata variables are part of the cell annotation prediction, but we also have variables of interest such as the percentage of mitochondrial, ribosomal and SARS-CoV-2 genes, or the predicted cell-type, cell cycle phase, ... Below we can see a summary and some plots of the metadata variables.
+
+```{r}
+head(meta)
+
+categorical <- c("predicted.id", "Phase", "condition", "origin", "donor")
+continuous <- c("prediction.score.max", "pct.mito", "pct.ribo", "pct.SCoV2",
+  "nCount_RNA", "nFeature_RNA", "scrublet_score")
+```
+
+### Continuous variables
+
+Regarding the continuous variables, we can see a summary of them bellow, and their distribution in the histograms (Figure \@ref(fig:histcon)) and UMAP plots (Figure \@ref(fig:featcon)). 
+
+```{r histcon, fig.cap="Histograms of the continuous metadata variables of interest."}
+descr(meta[,continuous])
+update_geom_defaults("bar", list(fill = "#a6cee3", color = "#1f78b4"))
+plot_histogram(meta[,continuous], ggtheme = theme_minimal())
+```
+
+```{r featcon, fig.cap="UMAP plots of the continuous metadata variables of interest.",  dev='svglite', fig.height=10, fig.width=12}
+featcon <- lapply(continuous, function(feature) {
+  FeaturePlot(se, features = feature) + 
+    ggtitle(feature)
+})
+
+wrap_plots(featcon, ncol = 3)
+```
+
+### Categorical variables
+
+Regarding the categorical variables, we can their counts by categories in the barplots (Figure \@ref(fig:barcat)) and UMAP plots (Figure \@ref(fig:dimcat)).
+
+```{r barcat, fig.cap="Barplots of the categorical metadata variables of interest."}
+plot_bar(meta[,categorical], ggtheme = theme_minimal())
+```
+
+```{r dimcat, fig.cap="UMAP plots of the categorical metadata variables of interest.",  dev='svglite', fig.height=10, fig.width=14}
+dimcat <- lapply(categorical, function(group) {
+  DimPlot(se, group.by = group, label = FALSE, alpha = 0.3) + 
+    ggtitle(group) + NoLegend()
+})
+
+wrap_plots(dimcat, ncol = 3)
+```
+
+### Bivariate analysis
+
+```{r, fig.height=10, fig.width=12}
+ggpairs((meta[,c(continuous, "condition")]), aes(color = condition, fill = condition), 
+        upper = list(continuous = wrap("cor", size = 3, color = "black")),
+        lower = list(continuous = wrap("points", alpha = 0.8, size = 1.5)),
+        diag = list(continuous = wrap("densityDiag", alpha = 0.8)),progress = FALSE) +
+  theme_minimal() +  
+  theme(text = element_text(color = "black"),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.background = element_blank(),
+        strip.background = element_blank(),
+        axis.text.y = element_text(size = 8, color = "black"),
+        axis.text.x = element_text(size = 8, angle = 45, hjust = 1, color = "black"),
+        strip.text.x = element_text(size = 5, color = "black"),
+        strip.text.y = element_text(size = 5, color = "black")) +
+  scale_fill_manual(values = c("#B3F0C9","#75B491","#A6CEE3","#5B8A6F")) + 
+  scale_color_manual(values = c("#4AE38A", "#168D48","#1F78B4", "#0D542B")) 
+```
+
+## % SARS-CoV-2 exploration
+
+Now, we are going to focus on the SARS-CoV-2 infection, looking at the percentage of SARS-CoV-2 gene expression in the cells. We can start by looking at the % of expression across all cells in general (Figure \@ref(fig:featcov2)).:
+
+
+```{r featcov2, fig.cap="Histogram and UMAP of the distribution of the percentage of SARS-CoV-2 gene expression across all cells.", fig.heigth=4, fig.width=12}
+summary(meta$pct.SCoV2)
+p1 <- ggplot(se@meta.data, aes(x = pct.SCoV2)) +
+  geom_histogram(fill = "#a6cee3", color = "#1f78b4", bins = 50) +
+  scale_x_log10() + 
+  theme_minimal() +
+  labs(x = "pct.SCoV2 (log scale)", y = "Number of cells")
+
+p2 <- FeaturePlot(se, features = "pct.SCoV2")
+
+wrap_plots(p1, p2)
+```
+
+The majority of the cells have 0% of SARS-CoV-2 gene expression, with a median of 0 and a maximum of `r max(meta$pct.SCoV2)`. However, there are `r sum(meta$pct.SCoV2 > 0)` cells with more than 0% of SARS-CoV-2 gene expression  (`r (sum(meta$pct.SCoV2 > 0)/nrow(meta))*100`%).
+
+### By condition
+ 
+From the total of `r sum(meta$pct.SCoV2 > 0)` infected cells, `r (sum(meta$pct.SCoV2 > 0 & meta$condition == "akut")/sum(meta$pct.SCoV2 > 0))*100`% are from the acute stage samples and `r (sum(meta$pct.SCoV2 > 0 & meta$condition == "prolonged")/sum(meta$pct.SCoV2 > 0))*100`% are from the prolonged stage samples. Specifically, as we can see in the Table \@ref(tab:covxcn1) there are `r sum(meta$pct.SCoV2 > 0 & meta$condition == "akut")` infected cells, representing `r (sum(meta$pct.SCoV2 > 0 & meta$condition == "akut")/sum(meta$condition == "akut"))*100`% of the cells from the acute stage samples, and `r sum(meta$pct.SCoV2 > 0 & meta$condition == "prolonged")` infected cells, representing `r (sum(meta$pct.SCoV2 > 0 & meta$condition == "prolonged")/sum(meta$condition == "prolonged"))*100`% of the cells from the prolonged stage samples. We can see these differences in the infected cells in the UMAP split by condition in the Figure \@ref(fig:covxcn2).
+
+```{r covxcn1, echo = FALSE, tab.cap = "Number of cells with SARS-CoV-2 gene expression by disease stage."}
+tab <- table(meta$pct.SCoV2 > 0, meta$condition)
+kable(tab, format = "html", booktabs = TRUE, escape = FALSE) %>%
+  kable_styling(bootstrap_options = c("striped", "hover"), 
+                full_width = TRUE, 
+                position = "center")
+```
+
+```{r covxcn2, fig.cap="UMAP of the SARS-CoV-2 positive cells by condition.", fig.heigth=4, fig.width=12}
+se_subset <- subset(se, subset = condition %in% c("akut", "prolonged"))
+DimPlot(se_subset,cells.highlight = intersect(colnames(se)[se$pct.SCoV2 > 0], colnames(se_subset)), split.by = "condition",
+        cols.highlight = "red", cols = "grey", 
+        ncol = 2,pt.size = 0.1, sizes.highlight = 0.1) + 
+  scale_color_manual(labels = c("Negative", "SARS-CoV-2+"), values = c("grey", "red"))
+```
+
+### By cell type
+
+If we take a look to which cell types the infected cells belong to, we can see that the majority of them are macrophages and the alveolar epithelial cells (Type 1), as shown in the Table \@ref(tab:covxct1) below. The only cell types that do not have any infected cells are the mucous cells and the myofibroblasts. In the Figure \@ref(fig:covxct2) we can see the distribution of the infected cells by cell type in a violin plot. We can appreciate how the cell types that have cells with the highest percentage of SARS-CoV-2 gene expression are the NK, capillary aerocyte and capillary cells, club, and the alveolar epithelial cells (Type 2).
+
+
+```{r covxct1, echo = FALSE, tab.cap = "Number of cells with SARS-CoV-2 gene expression by cell type."}
+tab <- table(meta$pct.SCoV2 > 0, meta$predicted.id)
+kable(tab, format = "html", booktabs = TRUE, escape = FALSE) %>%
+  scroll_box(width = "100%") %>%
+  kable_styling(bootstrap_options = c("striped", "hover"), 
+                full_width = TRUE, 
+                position = "center")
+```
+
+```{r covxct2, fig.cap="Violin plots of the distribution of the percentage of SARS-CoV-2 gene expression by cell type."}
+VlnPlot(se, features = "pct.SCoV2", group.by = "predicted.id", pt.size = 0.1) + NoLegend() + scale_y_continuous(trans = "log1p") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+```
+
+### By condition and cell type
+
+Finally, if we look at the infected cells by condition and cell type, we can see in the Tables \@ref(tab:covxctcn1),\@ref(tab:covxctcn2) and Figure \@ref(fig:covxctcn) below that in the case of cells coming from the prolonged stage samples, we only have an alveolar fibroblast, two capillary cells and a macrophage with SARS-CoV-2 gene expression, any of them with more than 0.25%, while in the acute stage samples we have infected cells in all cell types apart from myofibroblasts.
+
+```{r covxctcn1, echo = FALSE, tab.cap="Number of cells with SARS-CoV-2 gene expression by cell type for samples at the acute stage."}
+tab <-table(meta[meta$condition == "akut", "pct.SCoV2"] > 0, meta[meta$condition == "akut", "predicted.id"])
+kable(tab, format = "html", booktabs = TRUE, escape = FALSE) %>%
+  scroll_box(width = "100%") %>%
+  kable_styling(bootstrap_options = c("striped", "hover"), 
+                full_width = TRUE, 
+                position = "center")
+```
+
+```{r covxctcn2, echo = FALSE, tab.cap="Number of cells with SARS-CoV-2 gene expression by cell type for samples at the prolonged stage."}
+tab <-table(meta[meta$condition == "prolonged", "pct.SCoV2"] > 0, meta[meta$condition == "prolonged", "predicted.id"])
+kable(tab, format = "html", booktabs = TRUE, escape = FALSE) %>%
+  scroll_box(width = "100%") %>%
+  kable_styling(bootstrap_options = c("striped", "hover"), 
+                full_width = TRUE, 
+                position = "center")
+```
+
+```{r covxctcn, fig.cap="Violin plots of the distribution of the percentage of SARS-CoV-2 gene expression by cell type and condition."}
+lapply(c("akut", "prolonged"), function(i) {
+    VlnPlot(se[, se$condition == i], features = "pct.SCoV2", group.by = "predicted.id", pt.size = 0.1) + NoLegend() + scale_y_continuous(trans = "log1p") +
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1)) + labs(title = glue("{i} - pct.SCoV2"))
+}) %>% wrap_plots(ncol = 2)
+```
+
+# Annotation
+
+After the initial exploration of the data, the annotation was performed in multiple steps. The data was first separated by cell type (immune, endothelial, fibroblasts, smooth muscle cells) and condition (control, akut, chronic, prolonged).
+
+From each subset, at the level 1 of annotation, reprocessing was done, including normalization, scaling, PCA, harmony adjusting correcting by donor, and clustering, and then the clusters were annotated manually finding marker genes.
+
+In the next level of annotation, all disease groups were integrated together per cell type and annotated again, following the same procedure as in level 1, to check if cell types were annotated equally in different disease groups and to see if there were subpopulations within one cell type that should be split.
+
+Finally, in the level 3 of annotation, all the groups of cell types were integrated together and annotated again.
+
+Below is a summary of the annotation scripts that were used at each step:
+
+<style>
+  table.annotation-summary {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+  }
+  table.annotation-summary th, 
+  table.annotation-summary td {
+    padding: 8px 10px;
+    border-bottom: 1px solid #ddd;
+    text-align: left;
+  }
+  table.annotation-summary thead {
+    background-color: #f0f0f0;
+  }
+  table.annotation-summary tbody tr:nth-child(even) {
+    background-color: #fafafa;
+  }
+  code {
+    background: #f5f5f5;
+    padding: 2px 4px;
+    border-radius: 4px;
+  }
+</style>
+
+<table class="annotation-summary">
+  <thead>
+    <tr>
+      <th>Level</th>
+      <th>Condition</th>
+      <th>Cell Types</th>
+      <th>File Pattern</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>1</td>
+      <td>Acute</td>
+      <td>Endothelial, Fibroblast, SMC, Immune</td>
+      <td><code>annotation-acute-&lt;cell&gt;.Rmd</code></td>
+    </tr>
+    <tr>
+      <td>1</td>
+      <td>Chronic</td>
+      <td>Endothelial, Fibroblast, SMC, Immune</td>
+      <td><code>annotation-chronic-&lt;cell&gt;.Rmd</code></td>
+    </tr>
+    <tr>
+      <td>1</td>
+      <td>Control</td>
+      <td>Endothelial, Fibroblast, SMC, Immune</td>
+      <td><code>annotation-control-&lt;cell&gt;.Rmd</code></td>
+    </tr>
+    <tr>
+      <td>1</td>
+      <td>Prolonged</td>
+      <td>Endothelial, Fibroblast, SMC, Immune</td>
+      <td><code>annotation-prolonged-&lt;cell&gt;.Rmd</code></td>
+    </tr>
+    <tr>
+      <td>2</td>
+      <td>All Disease Groups</td>
+      <td>Endothelial, Fibroblast, Immune, SMC, T Cells, B Cells / PCs</td>
+      <td>
+        <code>annotation-&lt;cell&gt;_allDiseaseGroups.Rmd</code>
+      </td>
+    </tr>
+    <tr>
+      <td>3</td>
+      <td>Consolidated</td>
+      <td>All cell types</td>
+      <td><code>annotation-consolidated.Rmd</code></td>
+    </tr>
+  </tbody>
+</table>
+
+Now, we are going to explore the final annotation that was performed in the consolidated annotation step, where all the cell types groups were integrated together.
+
+## Load data
+
+```{r}
+se <- "{sn_dt}/se_annot_consolidated.rds" %>%
+    glue::glue() %>%
+    here::here() %>%
+    readRDS(.)
+```
+
+## Annotation exploration
+
+The idea of the consolidated annotation is to have three levels:
+ - **Fine annotation:** this is the most detailed annotation, with all the subtypes identified. This is still pending.
+ - **Intermediate annotation:** this groups some of the fine annotations from `annotation_lvl3` into broader categories. For example, smooth muscle cells and pericytes are grouped into "Muscle", various fibroblast types into "Fibroblasts", and endothelial cells into "Endothelial". Proliferating cells are grouped into "Proliferating", and low-quality cells into "LowQ". Immune cells are grouped into their respective categories like "M0", "NK", "T cells", "B cells", "DCs", "Mast", and "PCs".
+ - **General annotation:** this is the broadest level of annotation, grouping cells into "Stromal", "Proliferating", "LowQ", and "Immune" categories based on the intermediate annotation.
+ 
+The starting point for this annotation is the `annotation_lvl3` column in the metadata, which contains the cell types from the previous annotation step as we can see in Table \@ref(tab:annot3).
+
+```{r annot3, echo=FALSE, tab.cap="Number of cells per cell type in the annotation (level 3)."}
+tab <- data.frame(table(sort(se$annotation_lvl3)))
+colnames(tab) <- c("Cell type", "Nº cells")
+
+n_cols <- 4
+n_per_col <- ceiling(nrow(tab) / (n_cols / 2))
+
+tab <- split(tab, rep(1:(n_cols / 2), each = n_per_col, length.out = nrow(tab)))
+tab <- do.call(cbind, lapply(tab, function(x) {
+  if (nrow(x) < n_per_col) x[(nrow(x) + 1):n_per_col, ] <- ""
+  x
+}))
+
+kable(tab, format = "html", escape = FALSE) %>%
+  kable_styling(
+    bootstrap_options = c("striped", "hover"),
+    full_width = FALSE,
+    position = "center"
+  )
+```
+
+From this annotation, we can visualize the expression of marker genes for the different cell types in a heatmap (Figure \@ref(fig:heatmap_annot3)) and the UMAP with cells colored by cell type (Figure \@ref(fig:umap_annot3)).
+
+```{r, echo=FALSE}
+scov2_vec <- c(
+     "SCoV2-N", "SCoV2-orf1ab", "SCoV2-S", "SCoV2-ORF3a",
+     "SCoV2-E", "SCoV2-M", "SCoV2-ORF6", "SCoV2-ORF7a",
+     "SCoV2-ORF7b", "SCoV2-ORF8", "SCoV2-ORF10", "SCoV2-UTR3")
+
+t_cell <- c(
+    "CD3E", "CD3D", "CD8A", "CD8B", "CD4", "TRAC", "TRBC1", "TRBC2",
+    "TRDC", "TRGC1", "TRGC2", 
+    "LEF1", "IL7R", "TCF7", "SELL",
+    "TSHZ2", "CCR7", "CD69", "ITGAE", "ITGA1",
+    "TOX", "TIGIT", "LAG3", "HAVCR2", "CTLA4", "FOXP3", "TNFRSF9", "PDCD1",
+    "FCGR3A", "NCAM1", "KLRD1","GNLY", "NKG7","PRF1", "GZMB")
+
+b_cell <- c(
+    "BANK1", "MS4A1", "CD83", "PAX5",
+    "PRDM1", "SDC1", "JCHAIN",
+    "IGHM", "IGHD", "IGHG1", "IGHG2", "IGHG3", "IGHG4", "IGHA1", "IGHA2",
+    "BCL6", "CD40")
+
+myeloid <- c(
+    "VCAN",  "MARCO", "CTSL", "CCL18", "CD163","SPP1", "MRC1",
+    "CD74", "HLA-DRA", "HLA-DPA1", "HLA-DQB1", 
+    "C1QA", "C1QB", "C1QC", "LYZ", "PFN1",
+    "SIGLEC1",  
+    # DCs ?
+    "LAMP3", "CD83", "CD274", "CD58",
+    "ITGAX", "ITGAE","FN1", "OLR1", "SRGN", "CD86",
+    "CD80", "CD86", "CLEC9A", "XCR1", "SIRPA"
+)
+
+stromal <- c(
+    "PECAM1", "VWF", "CLDN5","EMCN",
+    "NCALD","PRKG1", "EDA",
+    "GJA5", "NPR3", "DKK2",
+    "PDPN", "LYVE1", "CCL21", "PIEZO2",
+    "COL8A1", "KRT7", "SFTPB", "SFTPC",
+    "BTNL9",  "ADGRF5", "FCN3", 
+    "CEMIP", "COL4A1", "COL4A2",
+    "CXCL8", "IL6", "VEGFA",
+    "LY6E", "PTX3", "LGALS1", "CXCL12",
+    "ACTA2", "TAGLN", "VIM", "DES", "LGR6",
+    "MCAM", "MYH11", "MYOCD",  "ANGPT1", "ITGA8",
+    "MPP7", "LOXL2"
+)
+se <- ScaleData(se, features = c(t_cell, b_cell, myeloid, stromal, scov2_vec))
+```
+
+```{r heatmap_annot3, fig.height=10, fig.width=12, fig.cap="Heatmap of the expression of marker genes across the cell types in the annotation (level 3)."}
+DoHeatmap(se,
+          features = unique(c(t_cell, b_cell, myeloid, stromal, scov2_vec)),
+          label = FALSE,
+          group.by = "annotation_lvl3",
+          slot = "scale.data") + NoLegend() +
+  theme(axis.text.y = element_text(size = 5))
+```
+
+```{r umap_annot3, fig.height=10, fig.width=14, fig.cap="UMAP showing the annotation (level 3)."}
+DimPlot(
+  object = se,
+  reduction = "umap",
+  alpha = 0.3,
+  pt.size = 0.1,
+  group.by = c("annotation_lvl3"),
+  raster = FALSE,
+    ncol = 2) + NoLegend()
+```
+
+
+**Annotation here isn't exacly the same that can be seen in `annotation-consolidated.html` from the cluster. Also, intermediate and general annotation isn't stored in the cluster**
+
+### General annotation
+
+```{r annot_general, echo=FALSE, tab.cap="Number of cells per cell type in the general annotation."}
+tab <- data.frame(table(se$annot_general))
+colnames(tab) <- c("Cell type", "Nº cells") 
+kable(tab, format = "html", escape = FALSE) %>%
+  kable_styling(
+    bootstrap_options = c("striped", "hover"),
+    full_width = FALSE,
+    position = "center"
+  )
+```
+
+```{r heatmap_general, fig.height=10, fig.width=12, fig.cap="Heatmap of the expression of marker genes across the cell types in the general annotation."}
+DoHeatmap(se,
+          features = unique(c(t_cell, b_cell, myeloid, stromal, scov2_vec)),
+          label = FALSE,
+          group.by = "annot_general",
+          slot = "scale.data") +
+  theme(axis.text.y = element_text(size = 5))
+```
+
+```{r umap_general, fig.height=10, fig.width=14, fig.cap="UMAP showing the general annotation."}
+DimPlot(object = se,
+        reduction = "umap",
+        alpha = 0.3,
+        pt.size = 0.1,
+        group.by = c("annot_general"),
+        raster = FALSE,
+        ncol = 2) 
+```
+
+### Intermediate annotation
+
+```{r annot_intermediate, echo=FALSE, tab.cap="Number of cells per cell type in the general annotation."}
+tab <- data.frame(table(se$annot_intermediate))
+colnames(tab) <- c("Cell type", "Nº cells") 
+kable(tab, format = "html", escape = FALSE) %>%
+  kable_styling(
+    bootstrap_options = c("striped", "hover"),
+    full_width = FALSE,
+    position = "center"
+  )
+```
+
+```{r heatmap_intermediate, fig.height=10, fig.width=12, fig.cap="Heatmap of the expression of marker genes across the cell types in the intermediate annotation."}
+DoHeatmap(se,
+          features = unique(c(t_cell, b_cell, myeloid, stromal, scov2_vec)),
+          label = FALSE,
+          group.by = "annot_intermediate",
+          slot = "scale.data") +
+  theme(axis.text.y = element_text(size = 5))
+```
+
+```{r umap_intermediate, fig.height=10, fig.width=14, fig.cap="UMAP showing the inermediate annotation."}
+DimPlot(object = se,
+        reduction = "umap",
+        alpha = 0.3,
+        pt.size = 0.1,
+        group.by = c("annot_intermediate"),
+        raster = FALSE,
+        ncol = 2) 
+```
+
+## Session Information
+
+```{r}
+sessionInfo()
+```
+
