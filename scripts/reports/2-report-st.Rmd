@@ -1,0 +1,183 @@
+---
+title: "Project Report 2 - Visium Data & Analysis Exploration"
+author: "Clàudia Vicente"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  bookdown::html_document2:
+    theme: cosmo
+    highlight: pygments
+    number_sections: true
+    global_numbering: true  
+    toc: true
+    toc_depth: 3
+    toc_float: true
+    df_print: paged
+editor_options: 
+  markdown: 
+    wrap: sentence
+  chunk_output_type: inline
+---
+
+# Introduction
+
+This report contain the overview and exploration of the dataset and the analysis that have been previously performed for the project.
+
+```{r setup, include=FALSE}
+set.seed(123)
+source(here::here("misc/paths.R"))
+
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE,   tidy = TRUE, tidy.opts = list(width.cutoff = 60),
+                      dev="svg",  out.width = "100%", fig.align = 'center',
+                      
+                      fig.path = here::here(paste0("{rep_plots}" %>%
+                                                     glue::glue() %>%
+                                                     here::here(),
+                                                   tools::file_path_sans_ext(basename(rstudioapi::getSourceEditorContext()$path)),
+                                                   "_files/")
+                                            )
+                      )
+options(width = 1200)
+```
+
+```{r, eval = FALSE, include = FALSE}
+rmarkdown::render(
+  "2-report-st.Rmd",
+  output_format = NULL,
+  output_dir = "{rep_html}" %>%
+                        glue::glue() %>%
+                        here::here()
+)
+```
+
+# Libraries
+
+```{r}
+library(Seurat)
+library(tidyverse)
+library(kableExtra)
+library(ggplot2)
+library(patchwork)
+```
+
+# Exploration
+
+We are going to start exploring the Visium data and analysis that has been performed so far.
+First, we are going to take a look at the data after the pre-processing and QC steps.
+
+## Load data
+
+We have the data divided by tissue and condition, we are going to load all the datasets in the same object to be able to explore it together.
+
+```{r}
+fn <- "{st_dt}/" %>%
+    glue::glue() %>%
+    here::here() %>%
+    list.files(path = ., full.names = TRUE, pattern = glue("qc_se_"))
+se_ls <- lapply(fn, function(i) {
+    se <- readRDS(file = i)
+})
+
+se <- merge(
+    se_ls[[1]], y = se_ls[2:length(se_ls)],
+    project = "COVID")
+
+meta <- se@meta.data
+s_meta <- load_sample_metadata()
+```
+
+## Data overview
+
+In the **QC** a basic analysis of the sequencing and mapping was performed from the QC metrics summary. Then, a QC visualization and filtering of Visium slides was done to prepare them for subsequent analysis. No-expressed genes by sample were removed, spots not overlapping tissue were also removed, and `chronic_case_4` from lymph node was removed due to low-quality. 
+
+After this step, the data consists of `r length(unique(meta$cond_tissue))` samples from different donors from paired lung and lymph node autopsies, consisting of `r unique(meta$cond_tissue[grepl("lung", meta$cond_tissue)])` samples from lung and `r unique(meta$cond_tissue[grepl("lymph", meta$cond_tissue)])` from dLNs, from which we have a total of `r unique(meta$cond_tissue[grepl("control", meta$cond_tissue)])` controls. The data dimensions are `r ncol(se)` spots by `r nrow(se@assays$Spatial)` genes (after removing those genes that were’t expressed in any of the spots overlaying the tissue).
+In Table \@ref(tab:exp), we can see a summary of the experimental design and the number of cells per donor:
+
+```{r}
+##### add tissue and remove n_cells:
+meta
+s_meta
+```
+
+```{r exp, tab.cap="Summary of the experimental design."}
+tab <- s_meta %>%
+  distinct(donor_id, disease_group, tissue) %>%
+  pivot_wider(
+    names_from = tissue,
+    values_from = tissue,
+    values_fill = ""
+  ) %>%
+  mutate(
+    across(c(everything(), -donor_id, -disease_group), ~ifelse(. != "", "x", ""))
+  ) %>%
+  arrange(disease_group, donor_id) %>%
+  rename(Donor = donor_id, Stage = disease_group, Lung = lung, `Lymph node` = `lymph-node`)
+
+s_cols <- setNames(
+  c("#4AE38A", "#168D48","#1F78B4", "#0D542B")[1:length(unique(tab$Stage[tab$Stage != ""]))],
+  unique(tab$Stage[tab$Stage != ""])
+)
+
+kable(tab, format = "html", booktabs = TRUE, escape = FALSE, align = "c") %>%
+  kable_styling(bootstrap_options = c("striped", "hover"), 
+                full_width = FALSE, 
+                position = "center") %>%
+  row_spec(6, color = "red") %>%
+  column_spec(1, color = "#404040", bold = TRUE) %>%
+  column_spec(2, color = s_cols[tab$Stage]) %>%
+  column_spec(3, color = "black") 
+```
+
+## Metadata descriptive analysis
+sample metadata!!!!!!!!!!
+
+mirar sex, age
+sars-cov-2_antemortem_swap
+lung_fibrosis_score
+tcr_id
+
+## Basic data features exploration
+
+We can visualize some basic featires of the data in figures x and y ...: 
+Number of genes x spot
+Number of reads x spot
+
+```{r}
+cond_tissue_ls <- s_meta %>%
+    filter(!str_detect(string = s_meta$library_id, pattern = "\\*SP117_\\*")) %>%
+    pull(study_id_tissue) %>%
+    .[. != "chronic_case_4-lymph-node"]  
+
+lapply(cond_tissue_ls, function(cond_tissue) {
+  sample_id <- s_meta[s_meta$study_id_tissue == cond_tissue, ] %>% dplyr::pull(donor_id)
+  
+  Seurat::SpatialFeaturePlot(
+    object = se[, se$cond_tissue == cond_tissue],
+    features = "nFeature_Spatial",
+    images = str_replace_all(cond_tissue, "-", ".")) +
+      ggplot2::scale_fill_viridis_c(option = "magma") +
+      ggplot2::labs(title = cond_tissue) +
+      ggplot2::theme(plot.title = element_text(hjust = 0.5, size = 18))
+  
+}) %>% cowplot::plot_grid(plotlist = .)
+```
+
+######
+
+
+tornar a fer SARS-CoV-2 % exploration
+
+fer el mateix analysis (de l'estil) qe sn en general
+
+
+
+######
+
+*** notes on deconvolution
+Notes tambe sobre tot el que necessito x la deconvolution, info computacional → que tenim, inputs que necessito, si ho puc correr a l’ordinador o ha de ser al cluster, …
+
+deconvolution has to be done from 0 after `3-integration-clustering`. only for lung?
+
+sn annotation is in `"{annot_sc}/{robj_dir}/se_annot_consolidated.rds"`
+hi ha funcio de seurat a single cell exp pero no per st, sha de fer manualment
+
+

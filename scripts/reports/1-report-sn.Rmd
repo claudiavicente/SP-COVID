@@ -79,7 +79,7 @@ meta <- se@meta.data
 
 ## Data overview
 
-The data consists of `r length(unique(meta$orig.ident))` samples from different donors from lung autopsies, consisting of 6 COVID-19 cases stratified in different stages and 2 controls. The data dimensions are `r ncol(se)` cells by `r nrow(se@assays$RNA@counts)` genes.
+The data consists of `r length(unique(meta$orig.ident))` samples from different donors from lung autopsies, consisting of `unique(meta$orig.ident[!grepl("control", meta$orig.ident)])` COVID-19 cases stratified in different stages and `r unique(meta$orig.ident[grepl("control", meta$orig.ident)])` controls. The data dimensions are `r ncol(se)` cells by `r nrow(se@assays$RNA@counts)` genes.
 In Table \@ref(tab:exp), we can see a summary of the experimental design and the number of cells per donor:
 
 ```{r exp, echo = FALSE, tab.cap = "Summary of the experimental design and number of cells per donor."}
@@ -166,7 +166,7 @@ wrap_plots(dimcat, ncol = 3)
 
 ### Bivariate analysis
 
-```{r, fig.height=10, fig.width=12}
+```{r, dev='svglite', fig.height=10, fig.width=12, fig.cap="Pairwise plots of the continuous metadata variables of interest, colored by condition."}
 ggpairs((meta[,c(continuous, "condition")]), aes(color = condition, fill = condition), 
         upper = list(continuous = wrap("cor", size = 3, color = "black")),
         lower = list(continuous = wrap("points", alpha = 0.8, size = 1.5)),
@@ -204,6 +204,13 @@ wrap_plots(p1, p2)
 ```
 
 The majority of the cells have 0% of SARS-CoV-2 gene expression, with a median of 0 and a maximum of `r max(meta$pct.SCoV2)`. However, there are `r sum(meta$pct.SCoV2 > 0)` cells with more than 0% of SARS-CoV-2 gene expression  (`r (sum(meta$pct.SCoV2 > 0)/nrow(meta))*100`%).
+
+```{r covxsam, fig.cap="Violin plots of the distribution of the percentage of SARS-CoV-2 gene expression by sample."}
+VlnPlot(se, features = "pct.SCoV2", group.by = "orig.ident", pt.size = 0.1) + NoLegend() + scale_y_continuous(trans = "log1p") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+```
+
+Looking at the distribution of the percentage of SARS-CoV-2 gene expression by sample in Figure \@ref(fig:covxsam), we can already see that there are some samples with a higher percentage of infected cells. Now, we are going to explore the infected cells in more detail by condition and cell type.
 
 ### By condition
  
@@ -375,8 +382,11 @@ se <- "{sn_dt}/se_annot_consolidated.rds" %>%
 ## Annotation exploration
 
 The idea of the consolidated annotation is to have three levels:
+
  - **Fine annotation:** this is the most detailed annotation, with all the subtypes identified. This is still pending.
+
  - **Intermediate annotation:** this groups some of the fine annotations from `annotation_lvl3` into broader categories. For example, smooth muscle cells and pericytes are grouped into "Muscle", various fibroblast types into "Fibroblasts", and endothelial cells into "Endothelial". Proliferating cells are grouped into "Proliferating", and low-quality cells into "LowQ". Immune cells are grouped into their respective categories like "M0", "NK", "T cells", "B cells", "DCs", "Mast", and "PCs".
+
  - **General annotation:** this is the broadest level of annotation, grouping cells into "Stromal", "Proliferating", "LowQ", and "Immune" categories based on the intermediate annotation.
  
 The starting point for this annotation is the `annotation_lvl3` column in the metadata, which contains the cell types from the previous annotation step as we can see in Table \@ref(tab:annot3).
@@ -452,7 +462,7 @@ stromal <- c(
 se <- ScaleData(se, features = c(t_cell, b_cell, myeloid, stromal, scov2_vec))
 ```
 
-```{r heatmap_annot3, fig.height=10, fig.width=12, fig.cap="Heatmap of the expression of marker genes across the cell types in the annotation (level 3)."}
+```{r heatmap_annot3, fig.height=6, fig.width=12, fig.cap="Heatmap of the expression of marker genes across the cell types in the annotation (level 3)."}
 DoHeatmap(se,
           features = unique(c(t_cell, b_cell, myeloid, stromal, scov2_vec)),
           label = FALSE,
@@ -461,7 +471,7 @@ DoHeatmap(se,
   theme(axis.text.y = element_text(size = 5))
 ```
 
-```{r umap_annot3, fig.height=10, fig.width=14, fig.cap="UMAP showing the annotation (level 3)."}
+```{r umap_annot3, fig.height=4, fig.width=14, fig.cap="UMAP showing the annotation (level 3)."}
 DimPlot(
   object = se,
   reduction = "umap",
@@ -488,7 +498,7 @@ kable(tab, format = "html", escape = FALSE) %>%
   )
 ```
 
-```{r heatmap_general, fig.height=10, fig.width=12, fig.cap="Heatmap of the expression of marker genes across the cell types in the general annotation."}
+```{r heatmap_general, fig.height=6, fig.width=12, fig.cap="Heatmap of the expression of marker genes across the cell types in the general annotation."}
 DoHeatmap(se,
           features = unique(c(t_cell, b_cell, myeloid, stromal, scov2_vec)),
           label = FALSE,
@@ -497,7 +507,7 @@ DoHeatmap(se,
   theme(axis.text.y = element_text(size = 5))
 ```
 
-```{r umap_general, fig.height=10, fig.width=14, fig.cap="UMAP showing the general annotation."}
+```{r umap_general, fig.height=4, fig.width=14, fig.cap="UMAP showing the general annotation."}
 DimPlot(object = se,
         reduction = "umap",
         alpha = 0.3,
@@ -520,7 +530,7 @@ kable(tab, format = "html", escape = FALSE) %>%
   )
 ```
 
-```{r heatmap_intermediate, fig.height=10, fig.width=12, fig.cap="Heatmap of the expression of marker genes across the cell types in the intermediate annotation."}
+```{r heatmap_intermediate, fig.height=6, fig.width=12, fig.cap="Heatmap of the expression of marker genes across the cell types in the intermediate annotation."}
 DoHeatmap(se,
           features = unique(c(t_cell, b_cell, myeloid, stromal, scov2_vec)),
           label = FALSE,
@@ -529,7 +539,7 @@ DoHeatmap(se,
   theme(axis.text.y = element_text(size = 5))
 ```
 
-```{r umap_intermediate, fig.height=10, fig.width=14, fig.cap="UMAP showing the inermediate annotation."}
+```{r umap_intermediate, fig.height=4, fig.width=14, fig.cap="UMAP showing the inermediate annotation."}
 DimPlot(object = se,
         reduction = "umap",
         alpha = 0.3,
