@@ -1,5 +1,5 @@
 ---
-title: "Project Report 1 - snRNA-seq Data Exploration and Annotation"
+title: "Project Report 1 - snRNA-seq Data & Annotation Exploration"
 author: "Clàudia Vicente"
 date: "`r format(Sys.time(), '%d %B, %Y')`"
 output:
@@ -53,13 +53,13 @@ rmarkdown::render(
 
 ```{r}
 library(Seurat)
-library(tidyverse)
 library(kableExtra)
+library(tidyverse)
+library(patchwork)
 library(ggplot2)
+library(GGally)
 library(DataExplorer)
 library(summarytools)
-library(patchwork)
-library(GGally)
 ```
 
 # Exploration
@@ -149,7 +149,7 @@ wrap_plots(featcon, ncol = 3)
 
 ### Categorical variables
 
-Regarding the categorical variables, we can their counts by categories in the barplots (Figure \@ref(fig:barcat)) and UMAP plots (Figure \@ref(fig:dimcat)).
+Regarding the categorical variables, we can see their counts by categories in the barplots (Figure \@ref(fig:barcat)) and UMAP plots (Figure \@ref(fig:dimcat)).
 
 ```{r barcat, fig.cap="Barplots of the categorical metadata variables of interest."}
 plot_bar(meta[,categorical], ggtheme = theme_minimal())
@@ -166,7 +166,7 @@ wrap_plots(dimcat, ncol = 3)
 
 ### Bivariate analysis
 
-```{r, dev='svglite', fig.height=10, fig.width=12, fig.cap="Pairwise plots of the continuous metadata variables of interest, colored by condition."}
+```{r bivariate, dev='svglite', fig.height=10, fig.width=12, fig.cap="Pairwise plots of the continuous metadata variables of interest, colored by condition."}
 ggpairs((meta[,c(continuous, "condition")]), aes(color = condition, fill = condition), 
         upper = list(continuous = wrap("cor", size = 3, color = "black")),
         lower = list(continuous = wrap("points", alpha = 0.8, size = 1.5)),

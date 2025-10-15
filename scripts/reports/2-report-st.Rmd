@@ -53,10 +53,13 @@ rmarkdown::render(
 
 ```{r}
 library(Seurat)
-library(tidyverse)
 library(kableExtra)
-library(ggplot2)
+library(tidyverse)
 library(patchwork)
+library(ggplot2)
+library(GGally)
+library(DataExplorer)
+library(summarytools)
 ```
 
 # Exploration
@@ -92,12 +95,6 @@ In the **QC** a basic analysis of the sequencing and mapping was performed from 
 After this step, the data consists of `r length(unique(meta$cond_tissue))` samples from different donors from paired lung and lymph node autopsies, consisting of `r unique(meta$cond_tissue[grepl("lung", meta$cond_tissue)])` samples from lung and `r unique(meta$cond_tissue[grepl("lymph", meta$cond_tissue)])` from dLNs, from which we have a total of `r unique(meta$cond_tissue[grepl("control", meta$cond_tissue)])` controls. The data dimensions are `r ncol(se)` spots by `r nrow(se@assays$Spatial)` genes (after removing those genes that were’t expressed in any of the spots overlaying the tissue).
 In Table \@ref(tab:exp), we can see a summary of the experimental design and the number of cells per donor:
 
-```{r}
-##### add tissue and remove n_cells:
-meta
-s_meta
-```
-
 ```{r exp, tab.cap="Summary of the experimental design."}
 tab <- s_meta %>%
   distinct(donor_id, disease_group, tissue) %>%
@@ -128,49 +125,147 @@ kable(tab, format = "html", booktabs = TRUE, escape = FALSE, align = "c") %>%
 ```
 
 ## Metadata descriptive analysis
-sample metadata!!!!!!!!!!
 
-mirar sex, age
-sars-cov-2_antemortem_swap
-lung_fibrosis_score
-tcr_id
+```{r}
+head(s_meta)
+head(meta)
+
+categorical <- c("disease_group", "sex", "age", "sars-cov-2_antemortem_swap", "tissue", "lung_fibrosis_score", "tcr_id")
+continuous <- c("percent.mito", "percent.ribo", "percent.SCoV2", "nCount_Spatial", "nFeature_Spatial")
+```
+
+### Continuous variables
+
+Regarding the continuous variables, we can see a summary of them bellow, and their distribution in the histograms (Figure \@ref(fig:histcon)). The first histogram shows the distribution of the continuous variables across all spots, and the following histograms show the distribution per sample.
+
+```{r histcon, fig.cap="Histograms of the continuous metadata variables of interest per spot.", fig.height=6, fig.width=12}
+descr(meta[,continuous])
+update_geom_defaults("bar", list(fill = "#a6cee3", color = "#1f78b4"))
+plot_histogram(meta[,continuous], ggtheme = theme_minimal(), ncol = 5)
+
+lapply(unique(meta$cond_tissue), function(ct) {
+  sub <- meta[meta$cond_tissue == ct, , drop = FALSE]
+  plot_histogram(sub[,continuous], ggtheme = theme_minimal(), ncol = 5, title = ct)
+})
+```
+
+### Categorical variables
+
+Regarding the categorical variables, we can see their counts by categories in the barplots of Figure \@ref(fig:barcat) for the sample metadata, and in \@ref(fig:barcat) for each spot.
+
+```{r sbarcat, fig.cap="Barplots of the categorical metadata variables of interest per sample."}
+plot_bar(s_meta[,c(categorical, "donor_id")], ggtheme = theme_minimal())
+```
+
+```{r barcat, fig.cap="Barplots of the categorical metadata variables of interest per spot."}
+plot_bar(meta[,gsub("-", ".", categorical)], ggtheme = theme_minimal())
+```
+
+### Bivariate analysis
+
+```{r bivariate, dev='svglite', fig.height=10, fig.width=12, fig.cap="Pairwise plots of the continuous metadata variables of interest, colored by condition."}
+ggpairs((meta[,c(continuous, "disease_group")]), aes(color = disease_group, fill = disease_group), 
+        upper = list(continuous = wrap("cor", size = 3, color = "black")),
+        lower = list(continuous = wrap("points", alpha = 0.8, size = 1.5)),
+        diag = list(continuous = wrap("densityDiag", alpha = 0.8)),progress = FALSE) +
+  theme_minimal() +  
+  theme(text = element_text(color = "black"),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.background = element_blank(),
+        strip.background = element_blank(),
+        axis.text.y = element_text(size = 8, color = "black"),
+        axis.text.x = element_text(size = 8, angle = 45, hjust = 1, color = "black"),
+        strip.text.x = element_text(size = 5, color = "black"),
+        strip.text.y = element_text(size = 5, color = "black")) +
+  scale_fill_manual(values = c("#B3F0C9","#75B491","#A6CEE3","#5B8A6F")) + 
+  scale_color_manual(values = c("#4AE38A", "#168D48","#1F78B4", "#0D542B")) 
+```
 
 ## Basic data features exploration
 
-We can visualize some basic featires of the data in figures x and y ...: 
-Number of genes x spot
-Number of reads x spot
+We can visualize some basic features of the data in Figures \@ref(fig:spfeat) and \@ref(spcount) to see how many genes and reads were captured per spot, and the distribution of these features across the samples. In this visualizations we can appreciate spot complexity and regions with higher transcriptional activity.
 
-```{r}
+### Number of genes per spot
+
+```{r spfeat, fig.cap="Spatial feature plots showing the number of genes per spot across all samples.", message=FALSE, warning=FALSE, dev='svglite', fig.height=20, fig.width=12}
 cond_tissue_ls <- s_meta %>%
     filter(!str_detect(string = s_meta$library_id, pattern = "\\*SP117_\\*")) %>%
     pull(study_id_tissue) %>%
     .[. != "chronic_case_4-lymph-node"]  
 
-lapply(cond_tissue_ls, function(cond_tissue) {
-  sample_id <- s_meta[s_meta$study_id_tissue == cond_tissue, ] %>% dplyr::pull(donor_id)
+s_spots <- c("control_case_2-lung"," control_case_3-lung", "acute_case_1-lung",
+             "chronic_case_2-lung", "chronic_case_4-lung",
+             "prolonged_case_3-lung", "prolonged_case_4-lung") 
+
+p_list <- lapply(cond_tissue_ls, function(cond_tissue) {
+  pt_size <- ifelse(cond_tissue %in% s_spots, 600, 1000)
   
-  Seurat::SpatialFeaturePlot(
+  SpatialFeaturePlot(
     object = se[, se$cond_tissue == cond_tissue],
     features = "nFeature_Spatial",
-    images = str_replace_all(cond_tissue, "-", ".")) +
-      ggplot2::scale_fill_viridis_c(option = "magma") +
-      ggplot2::labs(title = cond_tissue) +
-      ggplot2::theme(plot.title = element_text(hjust = 0.5, size = 18))
-  
-}) %>% cowplot::plot_grid(plotlist = .)
+    pt.size.factor = pt_size
+  ) +
+    scale_fill_viridis_c(option = "magma") +
+    labs(title = cond_tissue) +
+    theme(plot.title = element_text(hjust = 0.5, size = 12))
+})
+
+wrap_plots(p_list, ncol = 4)
 ```
 
-######
+### Number of counts per spot
 
+```{r spcount, fig.cap="Spatial feature plots showing the number of counts per spot across all samples.", message=FALSE, warning=FALSE, dev='svglite', fig.height=20, fig.width=12}
+p_list <- lapply(cond_tissue_ls, function(cond_tissue) {
+  pt_size <- ifelse(cond_tissue %in% s_spots, 600, 1000)
+  
+  SpatialFeaturePlot(
+    object = se[, se$cond_tissue == cond_tissue],
+    features = "nCount_Spatial",
+    pt.size.factor = pt_size) +
+    scale_fill_viridis_c(option = "magma") +
+    labs(title = cond_tissue) +
+    theme(plot.title = element_text(hjust = 0.5, size = 12))
+})
+
+wrap_plots(p_list, ncol = 4)
+```
+
+## % SARS-CoV-2 exploration
+
+######
 
 tornar a fer SARS-CoV-2 % exploration
 
-fer el mateix analysis (de l'estil) qe sn en general
+primer fer un summary x sample del percentage de SARS-CoV-2 reads
+primer fer mes grafics que no siguin spatial geatureplot
+fer un violin per cada condicio????
+
+```{r spcovid, fig.cap="Spatial feature plots showing the percentage of SARS-CoV-2 reads per spot across all samples.", message=FALSE, warning=FALSE, dev='svglite', fig.height=20, fig.width=12}
+##### remove samples with no covid before plotting
+p_list <- lapply(cond_tissue_ls, function(cond_tissue) {
+  pt_size <- ifelse(cond_tissue %in% s_spots, 600, 1000)
+  
+  SpatialFeaturePlot(
+    object = se[, se$cond_tissue == cond_tissue],
+    features = "percent.SCoV2",
+    pt.size.factor = pt_size) +
+    scale_fill_viridis_c(option = "magma") +
+    labs(title = cond_tissue) +
+    theme(plot.title = element_text(hjust = 0.5, size = 12))
+})
+
+wrap_plots(p_list, ncol = 4)
+```
+
 
 
 
 ######
+
+
+
 
 *** notes on deconvolution
 Notes tambe sobre tot el que necessito x la deconvolution, info computacional → que tenim, inputs que necessito, si ho puc correr a l’ordinador o ha de ser al cluster, …
@@ -179,5 +274,45 @@ deconvolution has to be done from 0 after `3-integration-clustering`. only for l
 
 sn annotation is in `"{annot_sc}/{robj_dir}/se_annot_consolidated.rds"`
 hi ha funcio de seurat a single cell exp pero no per st, sha de fer manualment
+
+
+The minimal unit of data required to run SPOTlight are:
+
+ST (sparse) matrix with the expression, raw or normalized, where rows = genes and columns = capture locations.
+Single cell (sparse) matrix with the expression, raw or normalized,
+where rows = genes and columns = cells.
+Vector indicating the cell identity for each column in the single cell expression matrix.
+Data inputs can also be objects of class SpatialExperiment (SE), SingleCellExperiment (SCE) objects from which the minimal data will be extracted.
+
+
+
+al tutorial es fa servir sce i spe
+
+If the dataset is very large we want to downsample it to train the model, both in of number of cells and number of genes. To do this, we want to keep a representative amount of cells per cluster and the most biologically relevant genes.
+
+In the paper we show how downsampling the number of cells per cell identity to ~100 doesn’t affect the performance of the model. Including >100 cells per cell identity provides marginal improvement while greatly increasing computational time and resources. Furthermore, restricting the gene set to the marker genes for each cell type along with up to 3.000 highly variable genes further optimizes performance and computational resources. You can find a more detailed explanation in the original paper.
+
+
+single cell:
+Feature selection <- 
+library size normalization to correct for cell-specific biases: sce <- logNormCounts(sce)
+Variance modelling to identify highly variable genes: dec <- modelGeneVar(sce) 
+getTopHVGs
+# Compute marker genes
+mgs <- scoreMarkers(sce, subset.row = genes)
+Then we want to keep only those genes that are relevant for each cell identity:
+Cell Downsampling <- Next, we randomly select at most 100 cells per cell identity.
+
+
+Deconvolution
+res <- SPOTlight(
+    x = sce,
+    y = spe,
+    groups = as.character(sce$free_annotation),
+    mgs = mgs_df,
+    hvg = hvg,
+    weight_id = "mean.AUC",
+    group_id = "cluster",
+    gene_id = "gene")
 
 

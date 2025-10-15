@@ -7,6 +7,7 @@ library(dplyr)
 dt <- "data"
 sn_dt <- glue("{dt}/snRNAseq")
 st_dt <- glue("{dt}/visium")
+tcr_dt <- glue("{dt}/tcr")
 
 
 ## Outputs
