@@ -54,9 +54,7 @@ rmarkdown::render(
 ```{r}
 library(Seurat)
 library(kableExtra)
-library(tidyverse)
 library(patchwork)
-library(ggplot2)
 library(GGally)
 library(DataExplorer)
 library(summarytools)
@@ -196,7 +194,7 @@ p1 <- ggplot(se@meta.data, aes(x = pct.SCoV2)) +
   geom_histogram(fill = "#a6cee3", color = "#1f78b4", bins = 50) +
   scale_x_log10() + 
   theme_minimal() +
-  labs(x = "pct.SCoV2 (log scale)", y = "Number of cells")
+  labs(x = "Log10(SCoV2 %)", y = "Number of cells")
 
 p2 <- FeaturePlot(se, features = "pct.SCoV2")
 
@@ -549,7 +547,7 @@ DimPlot(object = se,
         ncol = 2) 
 ```
 
-## Session Information
+# Session Information
 
 ```{r}
 sessionInfo()

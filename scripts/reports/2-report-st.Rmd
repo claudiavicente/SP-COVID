@@ -54,9 +54,7 @@ rmarkdown::render(
 ```{r}
 library(Seurat)
 library(kableExtra)
-library(tidyverse)
 library(patchwork)
-library(ggplot2)
 library(GGally)
 library(DataExplorer)
 library(summarytools)
@@ -78,6 +76,8 @@ fn <- "{st_dt}/" %>%
     list.files(path = ., full.names = TRUE, pattern = glue("qc_se_"))
 se_ls <- lapply(fn, function(i) {
     se <- readRDS(file = i)
+    se <- UpdateSeuratObject(se)
+    return(se)
 })
 
 se <- merge(
@@ -234,16 +234,61 @@ wrap_plots(p_list, ncol = 4)
 
 ## % SARS-CoV-2 exploration
 
-######
+Now, we are going to focus on the SARS-CoV-2 infection, looking at the percentage of SARS-CoV-2 gene expression for each spot. We can start by looking at the % of expression across all spots in general (Figure \@ref(fig:gencov)).:
 
-tornar a fer SARS-CoV-2 % exploration
+```{r gencov, fig.cap="Histogram of the distribution of the percentage of SARS-CoV-2 gene expression across all spots", fig.heigth=4, fig.width=12}
+summary(meta$percent.SCoV2)
+ggplot(se@meta.data, aes(x = percent.SCoV2)) +
+  geom_histogram(fill = "#a6cee3", color = "#1f78b4", bins = 50) +
+  scale_x_log10() + 
+  theme_minimal() +
+  labs(x = "Log10(SCoV2 %)", y = "Number of spots")
+```
 
-primer fer un summary x sample del percentage de SARS-CoV-2 reads
-primer fer mes grafics que no siguin spatial geatureplot
-fer un violin per cada condicio????
+The majority of spots have 0% of SARS-CoV-2 gene expression, with a median of 0 and a maximum of `r max(meta$percent.SCoV2)`. However, there are `r sum(meta$percent.SCoV2 > 0)` spots with more than 0% of SARS-CoV-2 gene expression  (`r (sum(meta$percent.SCoV2 > 0)/nrow(meta))*100`%).
+
+From the total of `r sum(meta$percent.SCoV2 > 0)` infected spots, `r (sum(meta$percent.SCoV2 > 0 & meta$disease_group == "acute")/sum(meta$percent.SCoV2 > 0))*100`% are from the acute stage samples, representing the stage with greater number of infected spots as we can see in Table \@ref(tab:tabcov2), and the ones with bigger percentages as we can appreciate in  Figure \@ref(fig:violincov). Also, as seen in as we can see in Table \@ref(tab:tabcov1) the majority of infected spots are from the lung samples: we have `r sum(meta$percent.SCoV2 > 0 & meta$tissue == "lung")` spots with COVID gene expression in lung versus `r sum(meta$percent.SCoV2 > 0 & meta$tissue == "lymph-node")` spots in dLNs. The samples that don't have any expression of SARS-CoV2 genes are:
+
+ - control_case_2-lymph-node
+
+ - chronic_case_4-lung
+ 
+ - prolonged_case_5-lymph-node
+
+```{r tabcov1, echo=FALSE, tab.cap = "Number of spots with SARS-CoV-2 gene expression by tissue."}
+tab <- table(meta$percent.SCoV2 > 0, meta$tissue)
+kable(tab, format = "html", booktabs = TRUE, escape = FALSE) %>%
+  kable_styling(bootstrap_options = c("striped", "hover"), 
+                full_width = TRUE, 
+                position = "center")
+```
+
+```{r tabcov2, echo=FALSE, tab.cap = "Number of spots with SARS-CoV-2 gene expression by stage."}
+tab <- table(meta$percent.SCoV2 > 0, meta$disease_group)
+kable(tab, format = "html", booktabs = TRUE, escape = FALSE) %>%
+  kable_styling(bootstrap_options = c("striped", "hover"), 
+                full_width = TRUE, 
+                position = "center")
+```
+
+```{r violincov, fig.cap="Violin plots of the distribution of the percentage of SARS-CoV-2 gene expression by stage and tissue of origin."}
+table(meta$percent.SCoV2 > 0, meta$cond_tissue)
+table(meta$percent.SCoV2 > 0, meta$tissue)
+
+
+p <- VlnPlot(se, features = "percent.SCoV2", group.by = "disease_group", split.by = "cond_tissue", pt.size = 0.1) + 
+  scale_y_continuous(trans = "log1p") +
+  xlab(NULL) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1)) +
+  NoLegend()
+p$data$tissue <- se$tissue[match(rownames(p$data), colnames(se))]
+p + facet_wrap(~tissue)
+```
+We can also explore the percentage of SARS-CoV-2 reads in spatial feature plots in Figure \@(fig:spcovid) for the samples having some expression for SARS-CoV-2 genes.
 
 ```{r spcovid, fig.cap="Spatial feature plots showing the percentage of SARS-CoV-2 reads per spot across all samples.", message=FALSE, warning=FALSE, dev='svglite', fig.height=20, fig.width=12}
-##### remove samples with no covid before plotting
+cond_tissue_ls <- setdiff(cond_tissue_ls, names(which(tapply(meta$percent.SCoV2, meta$cond_tissue, function(x) all(x == 0)))))
+
 p_list <- lapply(cond_tissue_ls, function(cond_tissue) {
   pt_size <- ifelse(cond_tissue %in% s_spots, 600, 1000)
   
@@ -259,13 +304,7 @@ p_list <- lapply(cond_tissue_ls, function(cond_tissue) {
 wrap_plots(p_list, ncol = 4)
 ```
 
-
-
-
 ######
-
-
-
 
 *** notes on deconvolution
 Notes tambe sobre tot el que necessito x la deconvolution, info computacional → que tenim, inputs que necessito, si ho puc correr a l’ordinador o ha de ser al cluster, …
@@ -314,5 +353,13 @@ res <- SPOTlight(
     weight_id = "mean.AUC",
     group_id = "cluster",
     gene_id = "gene")
+    
+
+# Session Information
+
+```{r}
+sessionInfo()
+```
+
 
 
