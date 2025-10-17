@@ -226,7 +226,7 @@ kable(tab, format = "html", booktabs = TRUE, escape = FALSE) %>%
 se_subset <- subset(se, subset = condition %in% c("akut", "prolonged"))
 DimPlot(se_subset,cells.highlight = intersect(colnames(se)[se$pct.SCoV2 > 0], colnames(se_subset)), split.by = "condition",
         cols.highlight = "red", cols = "grey", 
-        ncol = 2,pt.size = 0.1, sizes.highlight = 0.1) + 
+        ncol = 2, pt.size = 0.1, sizes.highlight = 0.1) + 
   scale_color_manual(labels = c("Negative", "SARS-CoV-2+"), values = c("grey", "red"))
 ```
 

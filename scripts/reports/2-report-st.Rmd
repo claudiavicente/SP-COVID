@@ -58,6 +58,9 @@ library(patchwork)
 library(GGally)
 library(DataExplorer)
 library(summarytools)
+library(colorBlindness)
+library(ggsci)
+library(cowplot)
 ```
 
 # Exploration
@@ -198,7 +201,7 @@ s_spots <- c("control_case_2-lung"," control_case_3-lung", "acute_case_1-lung",
              "chronic_case_2-lung", "chronic_case_4-lung",
              "prolonged_case_3-lung", "prolonged_case_4-lung") 
 
-p_list <- lapply(cond_tissue_ls, function(cond_tissue) {
+lapply(cond_tissue_ls, function(cond_tissue) {
   pt_size <- ifelse(cond_tissue %in% s_spots, 600, 1000)
   
   SpatialFeaturePlot(
@@ -209,15 +212,14 @@ p_list <- lapply(cond_tissue_ls, function(cond_tissue) {
     scale_fill_viridis_c(option = "magma") +
     labs(title = cond_tissue) +
     theme(plot.title = element_text(hjust = 0.5, size = 12))
-})
-
-wrap_plots(p_list, ncol = 4)
+}) %>%
+  wrap_plots(., ncol = 4)
 ```
 
 ### Number of counts per spot
 
 ```{r spcount, fig.cap="Spatial feature plots showing the number of counts per spot across all samples.", message=FALSE, warning=FALSE, dev='svglite', fig.height=20, fig.width=12}
-p_list <- lapply(cond_tissue_ls, function(cond_tissue) {
+lapply(cond_tissue_ls, function(cond_tissue) {
   pt_size <- ifelse(cond_tissue %in% s_spots, 600, 1000)
   
   SpatialFeaturePlot(
@@ -227,9 +229,8 @@ p_list <- lapply(cond_tissue_ls, function(cond_tissue) {
     scale_fill_viridis_c(option = "magma") +
     labs(title = cond_tissue) +
     theme(plot.title = element_text(hjust = 0.5, size = 12))
-})
-
-wrap_plots(p_list, ncol = 4)
+}) %>%
+  wrap_plots(., ncol = 4)
 ```
 
 ## % SARS-CoV-2 exploration
@@ -272,10 +273,6 @@ kable(tab, format = "html", booktabs = TRUE, escape = FALSE) %>%
 ```
 
 ```{r violincov, fig.cap="Violin plots of the distribution of the percentage of SARS-CoV-2 gene expression by stage and tissue of origin."}
-table(meta$percent.SCoV2 > 0, meta$cond_tissue)
-table(meta$percent.SCoV2 > 0, meta$tissue)
-
-
 p <- VlnPlot(se, features = "percent.SCoV2", group.by = "disease_group", split.by = "cond_tissue", pt.size = 0.1) + 
   scale_y_continuous(trans = "log1p") +
   xlab(NULL) +
@@ -284,12 +281,13 @@ p <- VlnPlot(se, features = "percent.SCoV2", group.by = "disease_group", split.b
 p$data$tissue <- se$tissue[match(rownames(p$data), colnames(se))]
 p + facet_wrap(~tissue)
 ```
+
 We can also explore the percentage of SARS-CoV-2 reads in spatial feature plots in Figure \@(fig:spcovid) for the samples having some expression for SARS-CoV-2 genes.
 
 ```{r spcovid, fig.cap="Spatial feature plots showing the percentage of SARS-CoV-2 reads per spot across all samples.", message=FALSE, warning=FALSE, dev='svglite', fig.height=20, fig.width=12}
 cond_tissue_ls <- setdiff(cond_tissue_ls, names(which(tapply(meta$percent.SCoV2, meta$cond_tissue, function(x) all(x == 0)))))
 
-p_list <- lapply(cond_tissue_ls, function(cond_tissue) {
+lapply(cond_tissue_ls, function(cond_tissue) {
   pt_size <- ifelse(cond_tissue %in% s_spots, 600, 1000)
   
   SpatialFeaturePlot(
@@ -299,61 +297,328 @@ p_list <- lapply(cond_tissue_ls, function(cond_tissue) {
     scale_fill_viridis_c(option = "magma") +
     labs(title = cond_tissue) +
     theme(plot.title = element_text(hjust = 0.5, size = 12))
-})
-
-wrap_plots(p_list, ncol = 4)
+}) %>%
+  wrap_plots(., ncol = 4)
 ```
 
-######
-
-*** notes on deconvolution
-Notes tambe sobre tot el que necessito x la deconvolution, info computacional → que tenim, inputs que necessito, si ho puc correr a l’ordinador o ha de ser al cluster, …
-
-deconvolution has to be done from 0 after `3-integration-clustering`. only for lung?
-
-sn annotation is in `"{annot_sc}/{robj_dir}/se_annot_consolidated.rds"`
-hi ha funcio de seurat a single cell exp pero no per st, sha de fer manualment
+```{r, echo=FALSE}
+rm(se)
+```
 
 
-The minimal unit of data required to run SPOTlight are:
+# Integration and clustering
 
-ST (sparse) matrix with the expression, raw or normalized, where rows = genes and columns = capture locations.
-Single cell (sparse) matrix with the expression, raw or normalized,
-where rows = genes and columns = cells.
-Vector indicating the cell identity for each column in the single cell expression matrix.
-Data inputs can also be objects of class SpatialExperiment (SE), SingleCellExperiment (SCE) objects from which the minimal data will be extracted.
+The integration and clustering of the data is done in 4 different stages:
 
+ - First, harmony integration is done by condition and tissue to correct for batch effect. Here the data is normalized and scaled, PCA is computed on 3,000 HVG and SVG; then harmony is executed. Similarly, the data is then integrated at the tissue level.
 
+ - In the next step the data is imputed using MAGIC denoising by tissue on selected marker genes for lung and LNs.
 
-al tutorial es fa servir sce i spe
+ - Finally, the clustering at different resolutions and annotation is done, also at the tissue level.
 
-If the dataset is very large we want to downsample it to train the model, both in of number of cells and number of genes. To do this, we want to keep a representative amount of cells per cluster and the most biologically relevant genes.
+Now, we can explore the resulting data.
 
-In the paper we show how downsampling the number of cells per cell identity to ~100 doesn’t affect the performance of the model. Including >100 cells per cell identity provides marginal improvement while greatly increasing computational time and resources. Furthermore, restricting the gene set to the marker genes for each cell type along with up to 3.000 highly variable genes further optimizes performance and computational resources. You can find a more detailed explanation in the original paper.
+## Lung annotation
 
+### Load data
 
-single cell:
-Feature selection <- 
-library size normalization to correct for cell-specific biases: sce <- logNormCounts(sce)
-Variance modelling to identify highly variable genes: dec <- modelGeneVar(sce) 
-getTopHVGs
-# Compute marker genes
-mgs <- scoreMarkers(sce, subset.row = genes)
-Then we want to keep only those genes that are relevant for each cell identity:
-Cell Downsampling <- Next, we randomly select at most 100 cells per cell identity.
+```{r}
+se_lung <- "{st_dt}/se_annot_join_lung.rds" %>%
+    glue::glue() %>%
+    here::here() %>%
+  readRDS(file = .)
+se_lung <- UpdateSeuratObject(se_lung)
+```
 
+### Exploration
 
-Deconvolution
-res <- SPOTlight(
-    x = sce,
-    y = spe,
-    groups = as.character(sce$free_annotation),
-    mgs = mgs_df,
-    hvg = hvg,
-    weight_id = "mean.AUC",
-    group_id = "cluster",
-    gene_id = "gene")
+In the case of lung samples, the annotation was previously done and used in a [paper](https://www.nature.com/articles/s41467-023-36333-2).
+In the Figure \@(fig:dimintel) we can see how the data looks like after integration.
+
+```{r dimintel, fig.cap="UMAPs showing the study ID and the annotation for lung samples.", fig.heigth=4, fig.width=12}
+DimPlot(object = se_lung, 
+        reduction = "umap", 
+        group.by = c("study_id", "newID"), 
+        pt.size = 0.1)
+```
+
+In Figure \@(fig:spotsxclustln) below, we can see the number of spots for each of the clusters for each sample.
+
+```{r spotsxclustln, fig.cap="Heatmap of the number of spots per cluster for each sample."}
+se_ln@meta.data %>%
+    count(annot, study_id) %>%
+    ggplot(aes(x = annot, y = study_id, fill = n, label = n)) +
+    geom_tile() +
+    geom_text(color = "grey") +
+    scale_fill_viridis_c(option = "magma") +
+      theme_classic() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1)) 
+```
+
+Regarding the annotation, we have `r length(unique(se_lung$newID))` different annotated clusters, we can see them spatially distributed in Figure \@(fig:spannl).
+
+```{r}
+annot <- sort(unique(se_lung$newID))
+palette <- paletteMartin[2:(length(annot)+1)]
+names(palette) <- annot
+```
+
+```{r spannl, fig.cap="Spatial feature plots showing the annotation across lung samples.", message=FALSE, warning=FALSE, dev='svglite', fig.height=12, fig.width=12}
+lapply(unique(se_lung$study_id), function(study_id) {
+    pt_size <- ifelse(study_id %in% gsub("-lung", "", s_spots), 600, 1000)
     
+    SpatialDimPlot(
+        object = se_lung[, se_lung$study_id == study_id],
+        group.by = "newID",
+        images = glue("{study_id}.lung"),
+        crop = FALSE,
+        pt.size.factor = pt_size,
+        cols = palette) +
+      labs(title = study_id) +
+      theme(plot.title = element_text(hjust = 0.5, size = 18))
+}) %>% 
+  wrap_plots(., ncol = 4) +
+  plot_layout(guides = "collect") & 
+  theme(legend.position = "bottom")
+```
+
+### % SARS-CoV-2 exploration
+
+Regarding SARS-CoV-2 gene expression as we can see in Table \@(tab:tabcobl) all clusters have spots with COVID reads.
+
+```{r tabcobl, echo=FALSE, tab.cap = "Number of spots with SARS-CoV-2 gene expression by cluster."}
+tab <- table(se_lung$percent.SCoV2 > 0, se_lung$newID)
+kable(tab, format = "html", booktabs = TRUE, escape = FALSE) %>%
+  kable_styling(bootstrap_options = c("striped", "hover"), 
+                full_width = TRUE, 
+                position = "center")
+```
+
+```{r violin1l, fig.cap="Violin plots of the distribution of the percentage of SARS-CoV-2 gene expression by cluster for lung samples."}
+VlnPlot(se_lung, features = "percent.SCoV2", group.by = "newID", pt.size = 0.1) + 
+  scale_y_continuous(trans = "log1p") +
+  xlab(NULL) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1)) +
+  NoLegend()
+```
+
+```{r violin2l, fig.cap="Violin plots of the distribution of the percentage of SARS-CoV-2 gene expression by cluster and stage for lung samples."}
+VlnPlot(se_lung, features = "percent.SCoV2", group.by = "disease_group", split.by = "newID", pt.size = 0.1) + 
+  scale_y_continuous(trans = "log1p") +
+  xlab(NULL) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1)) +
+  NoLegend()
+```
+
+```{r, echo=FALSE}
+rm(se_lung)
+```
+
+## LNs annotation
+
+### Load data
+
+```{r}
+se_ln <- "{st_dt}/se_annot_lymph-node.rds" %>%
+    glue::glue() %>%
+    here::here() %>%
+  readRDS(file = .)
+se_ln <- UpdateSeuratObject(se_ln)
+```
+
+### Exploration
+
+In the case of LNs samples, in the Figure \@(fig:diminteln) we can see how the data looks like after integration.
+
+```{r diminteln, fig.cap="UMAPs showing the study ID and the annotation for LN samples.", fig.heigth=4, fig.width=12}
+DimPlot(object = se_ln, 
+        reduction = "umap", 
+        group.by = c("study_id", "annot"), 
+        pt.size = 0.1)
+```
+
+In Figure \@(fig:spotsxclustln) below, we can see the number of spots for each of the clusters for each sample.
+
+```{r spotsxclustln, fig.cap="Heatmap of the number of spots per cluster for each sample."}
+se_ln@meta.data %>%
+    count(annot, study_id) %>%
+    ggplot(aes(x = annot, y = study_id, fill = n, label = n)) +
+    geom_tile() +
+    geom_text(color = "grey") +
+    scale_fill_viridis_c(option = "magma") +
+      theme_classic() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1)) 
+```
+
+Regarding the annotation, we have `r length(unique(se_ln$annot))` different annotated clusters, we can see them spatially distributed in Figure \@(fig:spannln). **Note that we have 4 unknown clusters.**
+
+```{r}
+annot <- sort(unique(se_ln$annot))
+palette <- pal_igv()(length(annot))
+names(palette) <- annot
+```
+
+```{r spannln, fig.cap="Spatial feature plots showing the annotation across LN samples.", message=FALSE, warning=FALSE, dev='svglite', fig.height=8, fig.width=12}
+p <- lapply(unique(se_ln$study_id), function(study_id) {
+    SpatialDimPlot(
+        object = se_ln[, se_ln$study_id == study_id],
+        group.by = "annot",
+        images = glue("{study_id}.lymph.node"),
+        crop = FALSE,
+        pt.size.factor = 1000,
+        cols = palette) +
+      labs(title = study_id) +
+      theme(plot.title = element_text(hjust = 0.5, size = 18))
+})
+
+dummy_data <- data.frame(x = 1:length(annot), y = 1:length(annot),
+                         annot = factor(annot, levels = annot))
+
+legend_plot <- ggplot(dummy_data, aes(x = x, y = y, color = annot)) +
+  geom_point() +
+  scale_color_manual(values = palette, breaks = annot) +
+  theme_minimal() +
+  theme(legend.position = "bottom") +
+  guides(color = guide_legend(title = "annot"))
+legend <- get_legend(legend_plot)
+
+wrap_plots(p, ncol = 4) / 
+  wrap_elements(legend) +
+  plot_layout(heights = c(16, 4)) 
+```
+
+### % SARS-CoV-2 exploration
+
+Regarding SARS-CoV-2 gene expression, we can see in Table \@(tab:tabcobl) from which cluster are the spots with COVID reads.
+
+```{r tabcobl, echo=FALSE, tab.cap = "Number of spots with SARS-CoV-2 gene expression by cluster."}
+tab <- table(se_ln$percent.SCoV2 > 0, se_ln$annot)
+kable(tab, format = "html", booktabs = TRUE, escape = FALSE) %>%
+  kable_styling(bootstrap_options = c("striped", "hover"), 
+                full_width = TRUE, 
+                position = "center")
+```
+
+```{r violin1l, fig.cap="Violin plots of the distribution of the percentage of SARS-CoV-2 gene expression by cluster for LN samples."}
+VlnPlot(se_ln, features = "percent.SCoV2", group.by = "annot", pt.size = 0.1) + 
+  scale_y_continuous(trans = "log1p") +
+  xlab(NULL) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1)) +
+  NoLegend()
+```
+
+```{r violin2l, fig.cap="Violin plots of the distribution of the percentage of SARS-CoV-2 gene expression by cluster and stage for LN samples."}
+VlnPlot(se_ln, features = "percent.SCoV2", group.by = "disease_group", split.by = "annot", pt.size = 0.1) + 
+  scale_y_continuous(trans = "log1p") +
+  xlab(NULL) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1)) +
+  NoLegend()
+```
+
+### Unknown clusters exploration
+
+#### Unknown-1
+
+```{r fig.height=8, fig.width=12, message=FALSE, warning=FALSE}
+u1 <- se_ln@meta.data %>%
+    filter(annot == "Unknown-1") %>%
+    pull(study_id) %>%
+    unique()
+
+lapply(u1, function(i) {
+    SpatialDimPlot(
+        se_ln[, se_ln$study_id == i & se_ln$annot == "Unknown-1"],
+        images = glue("{i}.lymph.node"),
+        crop = FALSE,
+        pt.size.factor = 1000) +
+    scale_fill_manual(values = "red") +
+    labs(title = i) +
+    NoLegend()
+}) %>% wrap_plots(ncol = 4)
+```
+
+#### Unknown-2
+
+```{r fig.height=8, fig.width=12, message=FALSE, warning=FALSE}
+u2 <- se_ln@meta.data %>%
+    filter(annot == "Unknown-2") %>%
+    pull(study_id) %>%
+    unique()
+
+lapply(u2, function(i) {
+    SpatialDimPlot(
+        se_ln[, se_ln$study_id == i & se_ln$annot == "Unknown-2"],
+        images = glue("{i}.lymph.node"),
+        crop = FALSE,
+        pt.size.factor = 1000) +
+    scale_fill_manual(values = "red") +
+    labs(title = i) +
+    NoLegend()
+}) %>% wrap_plots(ncol = 4)
+```
+
+#### Unknown-3
+
+```{r fig.height=8, fig.width=12, message=FALSE, warning=FALSE}
+u3 <- se_ln@meta.data %>%
+    filter(annot == "Unknown-3") %>%
+    pull(study_id) %>%
+    unique()
+
+lapply(u3, function(i) {
+    SpatialDimPlot(
+        se_ln[, se_ln$study_id == i & se_ln$annot == "Unknown-3"],
+        images = glue("{i}.lymph.node"),
+        crop = FALSE,
+        pt.size.factor = 1000) +
+    scale_fill_manual(values = "red") +
+    labs(title = i) +
+    NoLegend()
+}) %>% wrap_plots(ncol = 4)
+```
+
+#### Unknown-4
+
+```{r fig.height=8, fig.width=12, message=FALSE, warning=FALSE}
+u4 <- se_ln@meta.data %>%
+    filter(annot == "Unknown-4") %>%
+    pull(study_id) %>%
+    unique()
+
+lapply(u4, function(i) {
+    SpatialDimPlot(
+        se_ln[, se_ln$study_id == i & se_ln$annot == "Unknown-4"],
+        images = glue("{i}.lymph.node"),
+        crop = FALSE,
+        pt.size.factor = 1000) +
+    scale_fill_manual(values = "red") +
+    labs(title = i) +
+    NoLegend()
+}) %>% wrap_plots(ncol = 4)
+```
+
+
+marker genes x cluster 
+(fer plots com es fan x tots els clusters al markdown aqui x ensenyar marker genes, potse puc hipotetizar que son) (fixcar notes que surten tambe aqui)
+
+
+# Next steps: Deconvolution
+
+The next step to follow is to do the deconvolution on the integrated ST data from lung (after `3-integration-clustering` steps), using the snRNA-seq dataset. 
+Deconvolution will be done with `SPOTlight`, the minimal unit of data required to run it are:
+
+ - ST (sparse) matrix with the expression, raw or normalized, where rows = genes and columns = capture locations.
+
+ - Single cell (sparse) matrix with the expression, raw or normalized, where rows = genes and columns = cells.
+ 
+ - Vector indicating the cell identity for each column in the single cell expression matrix.
+ 
+In the [SPOTlight tutorial](https://www.bioconductor.org/packages/release/bioc/vignettes/SPOTlight/inst/doc/SPOTlight_kidney.html) objects of class SpatialExperiment (SE) and SingleCellExperiment (SCE) are used as data inputs.
+
+We are using Seurat objects instead of classes derived from `SummarizedExperiment`, so to do the deconvolution the best would be to convert the data:
+
+ - `as.SingleCellExperiment()` from Seurat can be used to convert the snRNA-seq data
+ - ST data needs to be converted manually
 
 # Session Information
 
