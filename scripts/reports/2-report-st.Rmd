@@ -26,7 +26,14 @@ This report contain the overview and exploration of the dataset and the analysis
 set.seed(123)
 source(here::here("misc/paths.R"))
 
-knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE,   tidy = TRUE, tidy.opts = list(width.cutoff = 60),
+knitr::knit_hooks$set(
+  memory = function(before, options, envir) {
+    if (!before) {
+      gc(verbose = FALSE)
+    }
+  }
+)
+knitr::opts_chunk$set(memory = TRUE, echo = TRUE, message = FALSE, warning = FALSE, tidy = TRUE, tidy.opts = list(width.cutoff = 60),
                       dev="svg",  out.width = "100%", fig.align = 'center',
                       
                       fig.path = here::here(paste0("{rep_plots}" %>%
@@ -55,12 +62,10 @@ rmarkdown::render(
 library(Seurat)
 library(kableExtra)
 library(patchwork)
+library(ggh4x)
 library(GGally)
 library(DataExplorer)
 library(summarytools)
-library(colorBlindness)
-library(ggsci)
-library(cowplot)
 ```
 
 # Exploration
@@ -95,7 +100,7 @@ s_meta <- load_sample_metadata()
 
 In the **QC** a basic analysis of the sequencing and mapping was performed from the QC metrics summary. Then, a QC visualization and filtering of Visium slides was done to prepare them for subsequent analysis. No-expressed genes by sample were removed, spots not overlapping tissue were also removed, and `chronic_case_4` from lymph node was removed due to low-quality. 
 
-After this step, the data consists of `r length(unique(meta$cond_tissue))` samples from different donors from paired lung and lymph node autopsies, consisting of `r unique(meta$cond_tissue[grepl("lung", meta$cond_tissue)])` samples from lung and `r unique(meta$cond_tissue[grepl("lymph", meta$cond_tissue)])` from dLNs, from which we have a total of `r unique(meta$cond_tissue[grepl("control", meta$cond_tissue)])` controls. The data dimensions are `r ncol(se)` spots by `r nrow(se@assays$Spatial)` genes (after removing those genes that were’t expressed in any of the spots overlaying the tissue).
+After this step, the data consists of `r length(unique(meta$cond_tissue))` samples from different donors from paired lung and lymph node autopsies, consisting of `r length(unique(meta$cond_tissue[grepl("lung", meta$cond_tissue)]))` samples from lung and `r length(unique(meta$cond_tissue[grepl("lymph", meta$cond_tissue)]))` from dLNs, from which we have a total of `r length(unique(meta$cond_tissue[grepl("control", meta$cond_tissue)]))` controls. The data dimensions are `r ncol(se)` spots by `r nrow(se@assays$Spatial)` genes (after removing those genes that were’t expressed in any of the spots overlaying the tissue).
 In Table \@ref(tab:exp), we can see a summary of the experimental design and the number of cells per donor:
 
 ```{r exp, tab.cap="Summary of the experimental design."}
@@ -141,15 +146,15 @@ continuous <- c("percent.mito", "percent.ribo", "percent.SCoV2", "nCount_Spatial
 
 Regarding the continuous variables, we can see a summary of them bellow, and their distribution in the histograms (Figure \@ref(fig:histcon)). The first histogram shows the distribution of the continuous variables across all spots, and the following histograms show the distribution per sample.
 
-```{r histcon, fig.cap="Histograms of the continuous metadata variables of interest per spot.", fig.height=6, fig.width=12}
+```{r histcon, fig.cap="Histograms of the continuous metadata variables of interest per spot.", fig.height=4, fig.width=12}
 descr(meta[,continuous])
 update_geom_defaults("bar", list(fill = "#a6cee3", color = "#1f78b4"))
 plot_histogram(meta[,continuous], ggtheme = theme_minimal(), ncol = 5)
 
-lapply(unique(meta$cond_tissue), function(ct) {
-  sub <- meta[meta$cond_tissue == ct, , drop = FALSE]
-  plot_histogram(sub[,continuous], ggtheme = theme_minimal(), ncol = 5, title = ct)
-})
+#lapply(unique(meta$cond_tissue), function(ct) {
+#  sub <- meta[meta$cond_tissue == ct, , drop = FALSE]
+#  plot_histogram(sub[,continuous], ggtheme = theme_minimal(), ncol = 5, title = ct)
+#})
 ```
 
 ### Categorical variables
@@ -166,7 +171,7 @@ plot_bar(meta[,gsub("-", ".", categorical)], ggtheme = theme_minimal())
 
 ### Bivariate analysis
 
-```{r bivariate, dev='svglite', fig.height=10, fig.width=12, fig.cap="Pairwise plots of the continuous metadata variables of interest, colored by condition."}
+```{r bivariate, dev='png', dpi=300, fig.cap="Pairwise plots of the continuous metadata variables of interest, colored by disease stage.", fig.height=10, fig.width=12}
 ggpairs((meta[,c(continuous, "disease_group")]), aes(color = disease_group, fill = disease_group), 
         upper = list(continuous = wrap("cor", size = 3, color = "black")),
         lower = list(continuous = wrap("points", alpha = 0.8, size = 1.5)),
@@ -187,7 +192,7 @@ ggpairs((meta[,c(continuous, "disease_group")]), aes(color = disease_group, fill
 
 ## Basic data features exploration
 
-We can visualize some basic features of the data in Figures \@ref(fig:spfeat) and \@ref(spcount) to see how many genes and reads were captured per spot, and the distribution of these features across the samples. In this visualizations we can appreciate spot complexity and regions with higher transcriptional activity.
+We can visualize some basic features of the data in Figures \@ref(fig:spfeat) and \@ref(fig:spcount) to see how many genes and reads were captured per spot, and the distribution of these features across the samples. In this visualizations we can appreciate spot complexity and regions with higher transcriptional activity.
 
 ### Number of genes per spot
 
@@ -235,7 +240,7 @@ lapply(cond_tissue_ls, function(cond_tissue) {
 
 ## % SARS-CoV-2 exploration
 
-Now, we are going to focus on the SARS-CoV-2 infection, looking at the percentage of SARS-CoV-2 gene expression for each spot. We can start by looking at the % of expression across all spots in general (Figure \@ref(fig:gencov)).:
+Now, we are going to focus on the SARS-CoV-2 infection, looking at the percentage of SARS-CoV-2 gene expression for each spot. We can start by looking at the % of expression across all spots in general (Figure \@ref(fig:gencov)):
 
 ```{r gencov, fig.cap="Histogram of the distribution of the percentage of SARS-CoV-2 gene expression across all spots", fig.heigth=4, fig.width=12}
 summary(meta$percent.SCoV2)
@@ -248,7 +253,7 @@ ggplot(se@meta.data, aes(x = percent.SCoV2)) +
 
 The majority of spots have 0% of SARS-CoV-2 gene expression, with a median of 0 and a maximum of `r max(meta$percent.SCoV2)`. However, there are `r sum(meta$percent.SCoV2 > 0)` spots with more than 0% of SARS-CoV-2 gene expression  (`r (sum(meta$percent.SCoV2 > 0)/nrow(meta))*100`%).
 
-From the total of `r sum(meta$percent.SCoV2 > 0)` infected spots, `r (sum(meta$percent.SCoV2 > 0 & meta$disease_group == "acute")/sum(meta$percent.SCoV2 > 0))*100`% are from the acute stage samples, representing the stage with greater number of infected spots as we can see in Table \@ref(tab:tabcov2), and the ones with bigger percentages as we can appreciate in  Figure \@ref(fig:violincov). Also, as seen in as we can see in Table \@ref(tab:tabcov1) the majority of infected spots are from the lung samples: we have `r sum(meta$percent.SCoV2 > 0 & meta$tissue == "lung")` spots with COVID gene expression in lung versus `r sum(meta$percent.SCoV2 > 0 & meta$tissue == "lymph-node")` spots in dLNs. The samples that don't have any expression of SARS-CoV2 genes are:
+From the total of `r sum(meta$percent.SCoV2 > 0)` infected spots, `r (sum(meta$percent.SCoV2 > 0 & meta$disease_group == "acute")/sum(meta$percent.SCoV2 > 0))*100`% are from the acute stage samples, representing the stage with greater number of infected spots as we can see in Table \@ref(tab:tabcov2), and the ones with bigger percentages as we can appreciate in  Figure \@ref(fig:violincov). Also, as seen in Table \@ref(tab:tabcov1) the majority of infected spots are from the lung samples: we have `r sum(meta$percent.SCoV2 > 0 & meta$tissue == "lung")` spots with COVID gene expression in lung versus `r sum(meta$percent.SCoV2 > 0 & meta$tissue == "lymph-node")` spots in dLNs. The samples that don't have any expression of SARS-CoV2 genes are:
 
  - control_case_2-lymph-node
 
@@ -272,17 +277,64 @@ kable(tab, format = "html", booktabs = TRUE, escape = FALSE) %>%
                 position = "center")
 ```
 
+```{r tabcov3, echo=FALSE, tab.cap = "Number of spots with SARS-CoV-2 gene expression by stage and tissue."}
+tab <- table(meta$percent.SCoV2 > 0, paste(meta$tissue, meta$disease_group, sep = "_"))
+kable(tab, format = "html", booktabs = TRUE, escape = FALSE) %>%
+  scroll_box(width = "100%") %>%
+  kable_styling(bootstrap_options = c("striped", "hover"), 
+                full_width = TRUE, 
+                position = "center")
+```
+
+
 ```{r violincov, fig.cap="Violin plots of the distribution of the percentage of SARS-CoV-2 gene expression by stage and tissue of origin."}
 p <- VlnPlot(se, features = "percent.SCoV2", group.by = "disease_group", split.by = "cond_tissue", pt.size = 0.1) + 
-  scale_y_continuous(trans = "log1p") +
   xlab(NULL) +
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1)) +
   NoLegend()
+
 p$data$tissue <- se$tissue[match(rownames(p$data), colnames(se))]
-p + facet_wrap(~tissue)
+p + facet_wrap(~tissue, scales = "free_y") +
+  facetted_pos_scales(
+    y = list(
+      tissue == "lung" ~ scale_y_continuous(trans = "log1p"),
+      tissue == "lymph-node" ~ scale_y_continuous(trans = scales::pseudo_log_trans(sigma = 0.0001))
+    )
+  )
 ```
 
-We can also explore the percentage of SARS-CoV-2 reads in spatial feature plots in Figure \@(fig:spcovid) for the samples having some expression for SARS-CoV-2 genes.
+```{r violincov2, fig.cap="Violin plots of the distribution of the percentage of SARS-CoV-2 gene expression by stage and tissue of origin showing matched samples."}
+common_ids <- se@meta.data %>%
+  group_by(study_id) %>%
+  summarise(tissues = n_distinct(tissue)) %>%
+  filter(tissues == 2) %>%
+  pull(study_id)
+se_filtered <- subset(se, study_id %in% common_ids)
+
+
+p <- VlnPlot(se_filtered, 
+             features = "percent.SCoV2", 
+             group.by = "study_id",  
+             split.by = "study_id", 
+             pt.size = 0.1) + 
+  xlab(NULL) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1)) +
+  NoLegend()
+
+p$data$tissue <- se$tissue[match(rownames(p$data), colnames(se))]
+p + facet_wrap(~tissue, scales = "free_y") +
+  facetted_pos_scales(
+    y = list(
+      tissue == "lung" ~ scale_y_continuous(trans = "log1p"),
+      tissue == "lymph-node" ~ scale_y_continuous(trans = scales::pseudo_log_trans(sigma = 0.0001))
+    )
+  )
+```
+
+
+
+
+We can also explore the percentage of SARS-CoV-2 reads in spatial feature plots in Figure \@ref(fig:spcovid) for the samples having some expression for SARS-CoV-2 genes.
 
 ```{r spcovid, fig.cap="Spatial feature plots showing the percentage of SARS-CoV-2 reads per spot across all samples.", message=FALSE, warning=FALSE, dev='svglite', fig.height=20, fig.width=12}
 cond_tissue_ls <- setdiff(cond_tissue_ls, names(which(tapply(meta$percent.SCoV2, meta$cond_tissue, function(x) all(x == 0)))))
@@ -300,325 +352,6 @@ lapply(cond_tissue_ls, function(cond_tissue) {
 }) %>%
   wrap_plots(., ncol = 4)
 ```
-
-```{r, echo=FALSE}
-rm(se)
-```
-
-
-# Integration and clustering
-
-The integration and clustering of the data is done in 4 different stages:
-
- - First, harmony integration is done by condition and tissue to correct for batch effect. Here the data is normalized and scaled, PCA is computed on 3,000 HVG and SVG; then harmony is executed. Similarly, the data is then integrated at the tissue level.
-
- - In the next step the data is imputed using MAGIC denoising by tissue on selected marker genes for lung and LNs.
-
- - Finally, the clustering at different resolutions and annotation is done, also at the tissue level.
-
-Now, we can explore the resulting data.
-
-## Lung annotation
-
-### Load data
-
-```{r}
-se_lung <- "{st_dt}/se_annot_join_lung.rds" %>%
-    glue::glue() %>%
-    here::here() %>%
-  readRDS(file = .)
-se_lung <- UpdateSeuratObject(se_lung)
-```
-
-### Exploration
-
-In the case of lung samples, the annotation was previously done and used in a [paper](https://www.nature.com/articles/s41467-023-36333-2).
-In the Figure \@(fig:dimintel) we can see how the data looks like after integration.
-
-```{r dimintel, fig.cap="UMAPs showing the study ID and the annotation for lung samples.", fig.heigth=4, fig.width=12}
-DimPlot(object = se_lung, 
-        reduction = "umap", 
-        group.by = c("study_id", "newID"), 
-        pt.size = 0.1)
-```
-
-In Figure \@(fig:spotsxclustln) below, we can see the number of spots for each of the clusters for each sample.
-
-```{r spotsxclustln, fig.cap="Heatmap of the number of spots per cluster for each sample."}
-se_ln@meta.data %>%
-    count(annot, study_id) %>%
-    ggplot(aes(x = annot, y = study_id, fill = n, label = n)) +
-    geom_tile() +
-    geom_text(color = "grey") +
-    scale_fill_viridis_c(option = "magma") +
-      theme_classic() +
-  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1)) 
-```
-
-Regarding the annotation, we have `r length(unique(se_lung$newID))` different annotated clusters, we can see them spatially distributed in Figure \@(fig:spannl).
-
-```{r}
-annot <- sort(unique(se_lung$newID))
-palette <- paletteMartin[2:(length(annot)+1)]
-names(palette) <- annot
-```
-
-```{r spannl, fig.cap="Spatial feature plots showing the annotation across lung samples.", message=FALSE, warning=FALSE, dev='svglite', fig.height=12, fig.width=12}
-lapply(unique(se_lung$study_id), function(study_id) {
-    pt_size <- ifelse(study_id %in% gsub("-lung", "", s_spots), 600, 1000)
-    
-    SpatialDimPlot(
-        object = se_lung[, se_lung$study_id == study_id],
-        group.by = "newID",
-        images = glue("{study_id}.lung"),
-        crop = FALSE,
-        pt.size.factor = pt_size,
-        cols = palette) +
-      labs(title = study_id) +
-      theme(plot.title = element_text(hjust = 0.5, size = 18))
-}) %>% 
-  wrap_plots(., ncol = 4) +
-  plot_layout(guides = "collect") & 
-  theme(legend.position = "bottom")
-```
-
-### % SARS-CoV-2 exploration
-
-Regarding SARS-CoV-2 gene expression as we can see in Table \@(tab:tabcobl) all clusters have spots with COVID reads.
-
-```{r tabcobl, echo=FALSE, tab.cap = "Number of spots with SARS-CoV-2 gene expression by cluster."}
-tab <- table(se_lung$percent.SCoV2 > 0, se_lung$newID)
-kable(tab, format = "html", booktabs = TRUE, escape = FALSE) %>%
-  kable_styling(bootstrap_options = c("striped", "hover"), 
-                full_width = TRUE, 
-                position = "center")
-```
-
-```{r violin1l, fig.cap="Violin plots of the distribution of the percentage of SARS-CoV-2 gene expression by cluster for lung samples."}
-VlnPlot(se_lung, features = "percent.SCoV2", group.by = "newID", pt.size = 0.1) + 
-  scale_y_continuous(trans = "log1p") +
-  xlab(NULL) +
-  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1)) +
-  NoLegend()
-```
-
-```{r violin2l, fig.cap="Violin plots of the distribution of the percentage of SARS-CoV-2 gene expression by cluster and stage for lung samples."}
-VlnPlot(se_lung, features = "percent.SCoV2", group.by = "disease_group", split.by = "newID", pt.size = 0.1) + 
-  scale_y_continuous(trans = "log1p") +
-  xlab(NULL) +
-  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1)) +
-  NoLegend()
-```
-
-```{r, echo=FALSE}
-rm(se_lung)
-```
-
-## LNs annotation
-
-### Load data
-
-```{r}
-se_ln <- "{st_dt}/se_annot_lymph-node.rds" %>%
-    glue::glue() %>%
-    here::here() %>%
-  readRDS(file = .)
-se_ln <- UpdateSeuratObject(se_ln)
-```
-
-### Exploration
-
-In the case of LNs samples, in the Figure \@(fig:diminteln) we can see how the data looks like after integration.
-
-```{r diminteln, fig.cap="UMAPs showing the study ID and the annotation for LN samples.", fig.heigth=4, fig.width=12}
-DimPlot(object = se_ln, 
-        reduction = "umap", 
-        group.by = c("study_id", "annot"), 
-        pt.size = 0.1)
-```
-
-In Figure \@(fig:spotsxclustln) below, we can see the number of spots for each of the clusters for each sample.
-
-```{r spotsxclustln, fig.cap="Heatmap of the number of spots per cluster for each sample."}
-se_ln@meta.data %>%
-    count(annot, study_id) %>%
-    ggplot(aes(x = annot, y = study_id, fill = n, label = n)) +
-    geom_tile() +
-    geom_text(color = "grey") +
-    scale_fill_viridis_c(option = "magma") +
-      theme_classic() +
-  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1)) 
-```
-
-Regarding the annotation, we have `r length(unique(se_ln$annot))` different annotated clusters, we can see them spatially distributed in Figure \@(fig:spannln). **Note that we have 4 unknown clusters.**
-
-```{r}
-annot <- sort(unique(se_ln$annot))
-palette <- pal_igv()(length(annot))
-names(palette) <- annot
-```
-
-```{r spannln, fig.cap="Spatial feature plots showing the annotation across LN samples.", message=FALSE, warning=FALSE, dev='svglite', fig.height=8, fig.width=12}
-p <- lapply(unique(se_ln$study_id), function(study_id) {
-    SpatialDimPlot(
-        object = se_ln[, se_ln$study_id == study_id],
-        group.by = "annot",
-        images = glue("{study_id}.lymph.node"),
-        crop = FALSE,
-        pt.size.factor = 1000,
-        cols = palette) +
-      labs(title = study_id) +
-      theme(plot.title = element_text(hjust = 0.5, size = 18))
-})
-
-dummy_data <- data.frame(x = 1:length(annot), y = 1:length(annot),
-                         annot = factor(annot, levels = annot))
-
-legend_plot <- ggplot(dummy_data, aes(x = x, y = y, color = annot)) +
-  geom_point() +
-  scale_color_manual(values = palette, breaks = annot) +
-  theme_minimal() +
-  theme(legend.position = "bottom") +
-  guides(color = guide_legend(title = "annot"))
-legend <- get_legend(legend_plot)
-
-wrap_plots(p, ncol = 4) / 
-  wrap_elements(legend) +
-  plot_layout(heights = c(16, 4)) 
-```
-
-### % SARS-CoV-2 exploration
-
-Regarding SARS-CoV-2 gene expression, we can see in Table \@(tab:tabcobl) from which cluster are the spots with COVID reads.
-
-```{r tabcobl, echo=FALSE, tab.cap = "Number of spots with SARS-CoV-2 gene expression by cluster."}
-tab <- table(se_ln$percent.SCoV2 > 0, se_ln$annot)
-kable(tab, format = "html", booktabs = TRUE, escape = FALSE) %>%
-  kable_styling(bootstrap_options = c("striped", "hover"), 
-                full_width = TRUE, 
-                position = "center")
-```
-
-```{r violin1l, fig.cap="Violin plots of the distribution of the percentage of SARS-CoV-2 gene expression by cluster for LN samples."}
-VlnPlot(se_ln, features = "percent.SCoV2", group.by = "annot", pt.size = 0.1) + 
-  scale_y_continuous(trans = "log1p") +
-  xlab(NULL) +
-  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1)) +
-  NoLegend()
-```
-
-```{r violin2l, fig.cap="Violin plots of the distribution of the percentage of SARS-CoV-2 gene expression by cluster and stage for LN samples."}
-VlnPlot(se_ln, features = "percent.SCoV2", group.by = "disease_group", split.by = "annot", pt.size = 0.1) + 
-  scale_y_continuous(trans = "log1p") +
-  xlab(NULL) +
-  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1)) +
-  NoLegend()
-```
-
-### Unknown clusters exploration
-
-#### Unknown-1
-
-```{r fig.height=8, fig.width=12, message=FALSE, warning=FALSE}
-u1 <- se_ln@meta.data %>%
-    filter(annot == "Unknown-1") %>%
-    pull(study_id) %>%
-    unique()
-
-lapply(u1, function(i) {
-    SpatialDimPlot(
-        se_ln[, se_ln$study_id == i & se_ln$annot == "Unknown-1"],
-        images = glue("{i}.lymph.node"),
-        crop = FALSE,
-        pt.size.factor = 1000) +
-    scale_fill_manual(values = "red") +
-    labs(title = i) +
-    NoLegend()
-}) %>% wrap_plots(ncol = 4)
-```
-
-#### Unknown-2
-
-```{r fig.height=8, fig.width=12, message=FALSE, warning=FALSE}
-u2 <- se_ln@meta.data %>%
-    filter(annot == "Unknown-2") %>%
-    pull(study_id) %>%
-    unique()
-
-lapply(u2, function(i) {
-    SpatialDimPlot(
-        se_ln[, se_ln$study_id == i & se_ln$annot == "Unknown-2"],
-        images = glue("{i}.lymph.node"),
-        crop = FALSE,
-        pt.size.factor = 1000) +
-    scale_fill_manual(values = "red") +
-    labs(title = i) +
-    NoLegend()
-}) %>% wrap_plots(ncol = 4)
-```
-
-#### Unknown-3
-
-```{r fig.height=8, fig.width=12, message=FALSE, warning=FALSE}
-u3 <- se_ln@meta.data %>%
-    filter(annot == "Unknown-3") %>%
-    pull(study_id) %>%
-    unique()
-
-lapply(u3, function(i) {
-    SpatialDimPlot(
-        se_ln[, se_ln$study_id == i & se_ln$annot == "Unknown-3"],
-        images = glue("{i}.lymph.node"),
-        crop = FALSE,
-        pt.size.factor = 1000) +
-    scale_fill_manual(values = "red") +
-    labs(title = i) +
-    NoLegend()
-}) %>% wrap_plots(ncol = 4)
-```
-
-#### Unknown-4
-
-```{r fig.height=8, fig.width=12, message=FALSE, warning=FALSE}
-u4 <- se_ln@meta.data %>%
-    filter(annot == "Unknown-4") %>%
-    pull(study_id) %>%
-    unique()
-
-lapply(u4, function(i) {
-    SpatialDimPlot(
-        se_ln[, se_ln$study_id == i & se_ln$annot == "Unknown-4"],
-        images = glue("{i}.lymph.node"),
-        crop = FALSE,
-        pt.size.factor = 1000) +
-    scale_fill_manual(values = "red") +
-    labs(title = i) +
-    NoLegend()
-}) %>% wrap_plots(ncol = 4)
-```
-
-
-marker genes x cluster 
-(fer plots com es fan x tots els clusters al markdown aqui x ensenyar marker genes, potse puc hipotetizar que son) (fixcar notes que surten tambe aqui)
-
-
-# Next steps: Deconvolution
-
-The next step to follow is to do the deconvolution on the integrated ST data from lung (after `3-integration-clustering` steps), using the snRNA-seq dataset. 
-Deconvolution will be done with `SPOTlight`, the minimal unit of data required to run it are:
-
- - ST (sparse) matrix with the expression, raw or normalized, where rows = genes and columns = capture locations.
-
- - Single cell (sparse) matrix with the expression, raw or normalized, where rows = genes and columns = cells.
- 
- - Vector indicating the cell identity for each column in the single cell expression matrix.
- 
-In the [SPOTlight tutorial](https://www.bioconductor.org/packages/release/bioc/vignettes/SPOTlight/inst/doc/SPOTlight_kidney.html) objects of class SpatialExperiment (SE) and SingleCellExperiment (SCE) are used as data inputs.
-
-We are using Seurat objects instead of classes derived from `SummarizedExperiment`, so to do the deconvolution the best would be to convert the data:
-
- - `as.SingleCellExperiment()` from Seurat can be used to convert the snRNA-seq data
- - ST data needs to be converted manually
 
 # Session Information
 

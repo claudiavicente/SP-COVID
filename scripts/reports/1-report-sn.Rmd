@@ -77,7 +77,7 @@ meta <- se@meta.data
 
 ## Data overview
 
-The data consists of `r length(unique(meta$orig.ident))` samples from different donors from lung autopsies, consisting of `unique(meta$orig.ident[!grepl("control", meta$orig.ident)])` COVID-19 cases stratified in different stages and `r unique(meta$orig.ident[grepl("control", meta$orig.ident)])` controls. The data dimensions are `r ncol(se)` cells by `r nrow(se@assays$RNA@counts)` genes.
+The data consists of `r length(unique(meta$orig.ident))` samples from different donors from lung autopsies, consisting of `r length(unique(meta$orig.ident[!grepl("control", meta$orig.ident)]))` COVID-19 cases stratified in different stages and `r length(unique(meta$orig.ident[grepl("control", meta$orig.ident)]))` controls. The data dimensions are `r ncol(se)` cells by `r nrow(se@assays$RNA@counts)` genes.
 In Table \@ref(tab:exp), we can see a summary of the experimental design and the number of cells per donor:
 
 ```{r exp, echo = FALSE, tab.cap = "Summary of the experimental design and number of cells per donor."}
@@ -164,7 +164,7 @@ wrap_plots(dimcat, ncol = 3)
 
 ### Bivariate analysis
 
-```{r bivariate, dev='svglite', fig.height=10, fig.width=12, fig.cap="Pairwise plots of the continuous metadata variables of interest, colored by condition."}
+```{r bivariate, dev='png', dpi=300, fig.cap="Pairwise plots of the continuous metadata variables of interest, colored by disease stage.", fig.height=10, fig.width=12}
 ggpairs((meta[,c(continuous, "condition")]), aes(color = condition, fill = condition), 
         upper = list(continuous = wrap("cor", size = 3, color = "black")),
         lower = list(continuous = wrap("points", alpha = 0.8, size = 1.5)),
@@ -186,7 +186,6 @@ ggpairs((meta[,c(continuous, "condition")]), aes(color = condition, fill = condi
 ## % SARS-CoV-2 exploration
 
 Now, we are going to focus on the SARS-CoV-2 infection, looking at the percentage of SARS-CoV-2 gene expression in the cells. We can start by looking at the % of expression across all cells in general (Figure \@ref(fig:featcov2)).:
-
 
 ```{r featcov2, fig.cap="Histogram and UMAP of the distribution of the percentage of SARS-CoV-2 gene expression across all cells.", fig.heigth=4, fig.width=12}
 summary(meta$pct.SCoV2)
@@ -233,7 +232,6 @@ DimPlot(se_subset,cells.highlight = intersect(colnames(se)[se$pct.SCoV2 > 0], co
 ### By cell type
 
 If we take a look to which cell types the infected cells belong to, we can see that the majority of them are macrophages and the alveolar epithelial cells (Type 1), as shown in the Table \@ref(tab:covxct1) below. The only cell types that do not have any infected cells are the mucous cells and the myofibroblasts. In the Figure \@ref(fig:covxct2) we can see the distribution of the infected cells by cell type in a violin plot. We can appreciate how the cell types that have cells with the highest percentage of SARS-CoV-2 gene expression are the NK, capillary aerocyte and capillary cells, club, and the alveolar epithelial cells (Type 2).
-
 
 ```{r covxct1, echo = FALSE, tab.cap = "Number of cells with SARS-CoV-2 gene expression by cell type."}
 tab <- table(meta$pct.SCoV2 > 0, meta$predicted.id)
@@ -406,11 +404,10 @@ kable(tab, format = "html", escape = FALSE) %>%
   kable_styling(
     bootstrap_options = c("striped", "hover"),
     full_width = FALSE,
-    position = "center"
-  )
+    position = "center")
 ```
 
-From this annotation, we can visualize the expression of marker genes for the different cell types in a heatmap (Figure \@ref(fig:heatmap_annot3)) and the UMAP with cells colored by cell type (Figure \@ref(fig:umap_annot3)).
+From this annotation, we can visualize the expression of marker genes for the different cell types in a heatmap (Figure \@ref(fig:hmannot3)) and the UMAP with cells colored by cell type (Figure \@ref(fig:umapannot3)).
 
 ```{r, echo=FALSE}
 scov2_vec <- c(
@@ -460,91 +457,97 @@ stromal <- c(
 se <- ScaleData(se, features = c(t_cell, b_cell, myeloid, stromal, scov2_vec))
 ```
 
-```{r heatmap_annot3, fig.height=6, fig.width=12, fig.cap="Heatmap of the expression of marker genes across the cell types in the annotation (level 3)."}
+```{r hmannot3, fig.height=6, fig.width=12, fig.cap="Heatmap of the expression of marker genes across the cell types in the annotation (level 3)."}
+max_val <- max(abs(se@assays$RNA@scale.data[unique(c(t_cell, b_cell, myeloid, stromal, scov2_vec)), ]))
 DoHeatmap(se,
           features = unique(c(t_cell, b_cell, myeloid, stromal, scov2_vec)),
           label = FALSE,
           group.by = "annotation_lvl3",
-          slot = "scale.data") + NoLegend() +
+          slot = "scale.data") + 
+  scale_fill_gradientn(colors = c("blue", "white", "red"),
+                       limits = c(-max_val, max_val),
+                       values = scales::rescale(c(-max_val, 0, max_val))) +
+  NoLegend() +
   theme(axis.text.y = element_text(size = 5))
 ```
 
-```{r umap_annot3, fig.height=4, fig.width=14, fig.cap="UMAP showing the annotation (level 3)."}
+```{r umapannot3, fig.height=4, fig.width=6, fig.cap="UMAP showing the annotation (level 3)."}
 DimPlot(
   object = se,
   reduction = "umap",
   alpha = 0.3,
   pt.size = 0.1,
   group.by = c("annotation_lvl3"),
-  raster = FALSE,
-    ncol = 2) + NoLegend()
+  raster = FALSE) + NoLegend()
 ```
 
 
-**Annotation here isn't exacly the same that can be seen in `annotation-consolidated.html` from the cluster. Also, intermediate and general annotation isn't stored in the cluster**
+**Annotation here isn't exacly the same that can be seen in `annotation-consolidated.html` from the cluster. Also, intermediate and general annotation isn't stored in the cluster.**
 
 ### General annotation
 
-```{r annot_general, echo=FALSE, tab.cap="Number of cells per cell type in the general annotation."}
+```{r annotgeneral, echo=FALSE, tab.cap="Number of cells per cell type in the general annotation."}
 tab <- data.frame(table(se$annot_general))
 colnames(tab) <- c("Cell type", "Nº cells") 
 kable(tab, format = "html", escape = FALSE) %>%
   kable_styling(
     bootstrap_options = c("striped", "hover"),
     full_width = FALSE,
-    position = "center"
-  )
+    position = "center")
 ```
 
-```{r heatmap_general, fig.height=6, fig.width=12, fig.cap="Heatmap of the expression of marker genes across the cell types in the general annotation."}
+```{r hmgeneral, fig.height=6, fig.width=12, fig.cap="Heatmap of the expression of marker genes across the cell types in the general annotation."}
 DoHeatmap(se,
           features = unique(c(t_cell, b_cell, myeloid, stromal, scov2_vec)),
           label = FALSE,
           group.by = "annot_general",
           slot = "scale.data") +
+    scale_fill_gradientn(colors = c("blue", "white", "red"),
+                       limits = c(-max_val, max_val),
+                       values = scales::rescale(c(-max_val, 0, max_val))) +
   theme(axis.text.y = element_text(size = 5))
 ```
 
-```{r umap_general, fig.height=4, fig.width=14, fig.cap="UMAP showing the general annotation."}
+```{r umapgeneral, fig.height=4, fig.width=6, fig.cap="UMAP showing the general annotation."}
 DimPlot(object = se,
         reduction = "umap",
         alpha = 0.3,
         pt.size = 0.1,
         group.by = c("annot_general"),
-        raster = FALSE,
-        ncol = 2) 
+        raster = FALSE) 
 ```
 
 ### Intermediate annotation
 
-```{r annot_intermediate, echo=FALSE, tab.cap="Number of cells per cell type in the general annotation."}
+```{r annotintermediate, echo=FALSE, tab.cap="Number of cells per cell type in the general annotation."}
 tab <- data.frame(table(se$annot_intermediate))
 colnames(tab) <- c("Cell type", "Nº cells") 
 kable(tab, format = "html", escape = FALSE) %>%
   kable_styling(
     bootstrap_options = c("striped", "hover"),
     full_width = FALSE,
-    position = "center"
-  )
+    position = "center")
 ```
 
-```{r heatmap_intermediate, fig.height=6, fig.width=12, fig.cap="Heatmap of the expression of marker genes across the cell types in the intermediate annotation."}
+```{r hmintermediate, fig.height=6, fig.width=12, fig.cap="Heatmap of the expression of marker genes across the cell types in the intermediate annotation."}
 DoHeatmap(se,
           features = unique(c(t_cell, b_cell, myeloid, stromal, scov2_vec)),
           label = FALSE,
           group.by = "annot_intermediate",
           slot = "scale.data") +
+  scale_fill_gradientn(colors = c("blue", "white", "red"),
+                       limits = c(-max_val, max_val),
+                       values = scales::rescale(c(-max_val, 0, max_val))) +
   theme(axis.text.y = element_text(size = 5))
 ```
 
-```{r umap_intermediate, fig.height=4, fig.width=14, fig.cap="UMAP showing the inermediate annotation."}
+```{r umapintermediate, fig.height=4, fig.width=6, fig.cap="UMAP showing the inermediate annotation."}
 DimPlot(object = se,
         reduction = "umap",
         alpha = 0.3,
         pt.size = 0.1,
         group.by = c("annot_intermediate"),
-        raster = FALSE,
-        ncol = 2) 
+        raster = FALSE) 
 ```
 
 # Session Information
