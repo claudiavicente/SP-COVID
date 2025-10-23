@@ -618,6 +618,3 @@ We are using Seurat objects instead of classes derived from `SummarizedExperimen
 ```{r}
 sessionInfo()
 ```
-
-
-

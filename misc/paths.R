@@ -10,15 +10,32 @@ st_dt <- glue("{dt}/visium")
 tcr_dt <- glue("{dt}/tcr")
 
 
+
 ## Outputs
 out <- "output"
 plots <- glue("{out}/plots")
 html <- glue("{out}/html")
 
-
 ## Reports
 rep_plots <- glue("{plots}/reports/")
 rep_html <- glue("{html}/reports")
+## sn
+sn_plots <- glue("{plots}/snRNAseq/")
+sn_html <- glue("{html}/snRNAseq")
+## visium
+st_plots <- glue("{plots}/visium/")
+st_html <- glue("{html}/visium")
+## maybe integration directory in the future
+
+
+
+## Output data
+sn_odt <- glue("{out}/{dt}/snRNAseq")
+st_odt <- glue("{out}/{dt}/visium")
+tcr_odt <- glue("{out}/{dt}/tcr")
+## maybe integration directory in the future
+
+
 
 
 ## Read metadata

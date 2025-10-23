@@ -1,0 +1,423 @@
+---
+title: "Annotation 1 - LN Unknown Clusters Exploration (DE Analysis)"
+author: "Clàudia Vicente"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  bookdown::html_document2:
+    theme: cosmo
+    highlight: pygments
+    number_sections: true
+    global_numbering: true  
+    toc: true
+    toc_depth: 3
+    toc_float: true
+    df_print: paged
+editor_options: 
+  markdown: 
+    wrap: sentence
+  chunk_output_type: inline
+---
+
+# Introduction
+
+Here the Visium LN niche annotation is explored with the objective of investigating Unknown clusters and label them appropiately.
+
+```{r setup, include=FALSE}
+set.seed(123)
+source(here::here("misc/paths.R"))
+
+knitr::knit_hooks$set(
+  memory = function(before, options, envir) {
+    if (!before) {
+      gc(verbose = FALSE)
+    }
+  }
+)
+knitr::opts_chunk$set(memory = TRUE, echo = TRUE, message = FALSE, warning = FALSE, tidy = TRUE, tidy.opts = list(width.cutoff = 60),
+                      dev="svg",  out.width = "100%", fig.align = 'center',
+                      
+                      fig.path = here::here(paste0("{st_plots}" %>%
+                                                     glue::glue() %>%
+                                                     here::here(),
+                                                   tools::file_path_sans_ext(basename(rstudioapi::getSourceEditorContext()$path)),
+                                                   "_files/")
+                                            )
+                      )
+options(width = 1200)
+```
+
+```{r, eval = FALSE, include = FALSE}
+rmarkdown::render(
+  "1-annot-ln.Rmd",
+  output_format = NULL,
+  output_dir = "{st_html}" %>%
+                        glue::glue() %>%
+                        here::here()
+)
+```
+
+# Libraries
+
+```{r}
+library(Seurat)
+library(ggsci)
+library(cowplot)
+library(patchwork)
+library(EnhancedVolcano)
+library(clusterProfiler)
+library(org.Hs.eg.db) 
+```
+
+# Load data
+
+```{r}
+se_ln <- "{st_dt}/se_annot_lymph-node.rds" %>%
+    glue::glue() %>%
+    here::here() %>%
+  readRDS(file = .)
+se_ln <- UpdateSeuratObject(se_ln)
+```
+
+# Report recap
+
+In the LN annotation exploration from `3-report-st`, we saw that we have `r length(unique(se_ln$annot))` different annotated clusters, as we can see in Figure \@ref(fig:spannln). We can also see the proportion of each cluster for each sample in Figure \@ref(fig:propln).
+
+```{r}
+annot <- sort(unique(se_ln$annot))
+palette <- pal_igv()(length(annot))
+names(palette) <- annot
+```
+
+```{r spannln, fig.cap="Spatial feature plots showing the annotation across LN samples.", message=FALSE, warning=FALSE, dev='svglite', fig.height=8, fig.width=12}
+p <- lapply(unique(se_ln$study_id), function(study_id) {
+    SpatialDimPlot(
+        object = se_ln[, se_ln$study_id == study_id],
+        group.by = "annot",
+        images = glue("{study_id}.lymph.node"),
+        crop = FALSE,
+        pt.size.factor = 1000,
+        cols = palette) +
+    labs(title = study_id) +
+    theme(plot.title = element_text(hjust = 0.5, size = 18)) + 
+    NoLegend()
+})
+
+dummy_data <- data.frame(x = 1:length(annot), y = 1:length(annot),
+                         annot = factor(annot, levels = annot))
+
+legend_plot <- ggplot(dummy_data, aes(x = x, y = y, color = annot)) +
+  geom_point() +
+  scale_color_manual(values = palette, breaks = annot) +
+  theme_minimal() +
+  theme(legend.position = "bottom") +
+  guides(color = guide_legend(title = "annot"))
+legend <- get_legend(legend_plot)
+
+wrap_plots(p, ncol = 4) / 
+  wrap_elements(legend) +
+  plot_layout(heights = c(16, 4)) 
+```
+
+```{r propln, fig.cap="Bar plots showing the proportion of each cluster across lung samples."}
+se_ln@meta.data %>%
+  group_by(study_id, annot) %>%
+  summarise(count = n(), .groups = 'drop') %>%
+  group_by(study_id) %>%
+  mutate(proportion = count / sum(count)) %>%
+  
+  ggplot(aes(x = study_id, y = proportion, fill = annot)) +
+  geom_bar(stat = "identity", position = "stack") +
+  labs(x = "Study ID", y = "Proportion") +
+  theme_void() +
+  theme(
+    axis.text = element_text(color = "black", size = 10),
+    axis.text.x = element_text(angle = 90, hjust = 1),
+    axis.title = element_text(color = "black", size = 11),
+    axis.title.y = element_text(angle = 90),
+    legend.text = element_text(size = 9),
+    legend.title = element_text(size = 10),
+  ) +
+  guides(fill = guide_legend(ncol = 2)) +
+  scale_y_continuous(labels = scales::percent_format()) +
+  scale_fill_manual(values = palette)
+```
+
+We also noticed that **we have 4 unknown clusters**, so here we will continue investigating these clusters.
+Across the clusters, Unknown-1 was really similar to `Mithocondrial` cluster and will need to be investigated alone. Importantly, as we can see in Figure \@ref(fig:vlnmsl), all of the other `Unknown` clusters (2-4) seem to be from muscle/fibro-related niches as we can see by their expression of muscle-related genes and also based on their distribution on tissue.
+
+```{r}
+"{st_dt}/ln-gene-dict.R" %>%
+    glue::glue() %>%
+    here::here() %>%
+    source(file = .)
+```
+
+```{r vlnmsl, fig.cap="Violin plots of the expression of muscle genes of interest for clusters Unknown-2, Unknown-3, Unknown-4 and Muscle-fibro.", fig.width=6, fig.height=10}
+VlnPlot(subset(se_ln, annot %in% c("Unknown-2", "Unknown-3", "Unknown-4", "Muscle-Fibro")),
+        features = c("MYH11", "DES", "MYLK", "ACTG2", "ACTA2", "MYL9","TAGLN", "MGP"),
+        group.by = "annot",
+        pt.size = 0.1,
+        ncol = 2)
+```
+
+# DE analysis
+Starting from this point, we will perform a one-vs-all DE analysis for `Unknown2–4` to identify genes that differentiate each cluster from the others.
+
+```{r}
+s_se <- subset(se_ln, annot %in% c("Unknown-2", "Unknown-3", "Unknown-4"))
+markers <- FindAllMarkers(
+  object = s_se,
+  assay = "Spatial",
+  min.pct = 0.1
+)
+table(markers$cluster)
+
+sign <-  markers %>%
+  filter(p_val_adj < 0.01 & abs(avg_log2FC) > log2(1.5))
+table(sign$cluster)
+```
+
+## Volcano plots
+
+```{r}
+volcano <- function(t) {
+  pThreshold <- max(t$p_val[t$p_val_adj < 0.01])
+  
+  keyvals.colour <- ifelse(
+    t$avg_log2FC <= -log2(1.5) & t$p_val < pThreshold, 'blue',      
+    ifelse(t$avg_log2FC >= log2(1.5) & t$p_val < pThreshold, 'red', 
+    'gray80'))                                                         
+  
+  names(keyvals.colour)[keyvals.colour == 'blue'] <- 'Downregulated'
+  names(keyvals.colour)[keyvals.colour == 'red'] <- 'Upregulated'
+  names(keyvals.colour)[keyvals.colour == 'gray80'] <- 'Not significant'
+
+  EnhancedVolcano(t, lab = t$gene, xlim = c(-10, 10),
+                  x = 'avg_log2FC', y = 'p_val', pCutoff = pThreshold, FCcutoff = log2(1.5),
+                  pointSize = 1.5, labSize = 3.0,
+                  title = t$cluster, subtitle = "", colCustom = keyvals.colour,
+                  legendPosition = 'right', legendLabSize = 10, legendIconSize = 4.0,
+                  drawConnectors = TRUE, widthConnectors = 0.5, 
+                  max.overlaps = 40)
+}
+
+for (clust in unique(sign$cluster) ) {
+  print(volcano(markers %>% filter(cluster == clust)))
+}
+```
+
+## Heatmap (top markers)
+
+```{r}
+top10 <- sign %>%
+  group_by(cluster) %>%
+  top_n(10, avg_log2FC)
+
+DoHeatmap(s_se, features = top10$gene, label = FALSE) + 
+  scale_fill_gradient2(low = "blue", mid = "white", high = "red", midpoint = 0)
+
+sign %>% filter(cluster == "Unknown-2") %>% pull(gene)
+top10 %>% filter(cluster == "Unknown-3") %>% pull(gene)
+markers %>% filter(gene %in% gene_vec)
+gene_dict
+```
+
+## GO-BP enrichment
+
+```{r}
+go_results <- list()
+for (clust in unique(sign$cluster) ) {
+  
+  genes <- sign %>%
+    filter(cluster == clust) %>%
+    pull(gene)
+  entrez <- bitr(genes, fromType = "SYMBOL", toType = "ENTREZID", OrgDb = org.Hs.eg.db)
+  
+  go <- enrichGO(
+    gene = entrez$ENTREZID,
+    OrgDb = org.Hs.eg.db,
+    ont = "BP",
+    pAdjustMethod = "BH",
+    qvalueCutoff = 0.05
+  )
+  go_results[[clust]] <- go
+  
+  print(dotplot(go, showCategory = 15) + ggtitle(clust))
+}
+```
+
+# Interpretation
+
+```{r uspdist, fig.height=4, fig.width=12, fig.cap="Spatial plots showing the distribution of Unknown clusters across LN samples."}
+SpatialDimPlot(s_se,
+               group.by = "annot",
+               pt.size.factor = 1000,
+               ncol = 4)
+```
+
+## Unknown-2
+
+Based on the results we can see that this group of spots present mixed populations markers and evidence of stress response.
+
+```{r u2ge, fig.height=10, fig.width=8, fig.cap="Violin plots showing expression of genes of interest for Unknown-2 across Unknown clusters."}
+u2_ge <- c("MT-CO1", "MT-ND2", "ACKR1", "PLA2G2A", "PAX5", # markers
+           "VWF", "PECAM1", "CDH5",  # endothelial
+           "HSPA1A", "HSPB1",# stress markers
+           "MT1X", "MT1A", "MT1M",   # metallothioneins 
+           "PTPRC",
+           "CD79A", "MS4A1" # B cells
+           )
+
+VlnPlot(s_se, 
+        features = u2_ge,
+        split.by = "annot",
+        pt.size = 0.1,
+        ncol = 4) 
+```
+
+```{r u2qc, fig.height=3, fig.width=10, fig.cap="Violin plots showing QC metrics across Unknown clusters."}
+VlnPlot(s_se,
+        features = c("nCount_Spatial", "nFeature_Spatial", "percent.mito", "percent.ribo"),
+        split.by = "annot",
+        pt.size = 0.1,
+        ncol = 4)
+```
+
+From Figures \@ref(fig:u2ge) and \@ref(fig:u2qc) we can suspect that `Unknown-2` cluster consists of low quality or stressed cells, as we see lower features detected and high mitochondrial gene expression compared to the other clusters. We also have high metallothionein expression indicating stress response and endothelial identity (ACKR1+ VWF+).
+
+## Unknown-3 
+
+Based on the found marker genes and GO enrichment results, we have evidence of `Unknown-3` possibly being Proliferating/Cycling Cells:
+
+ - We have cell cycle genes (E2F2, NCAPG, BUB1B, MYB) as DE
+ - We have several mitotic-related processes and lymphocyte differentiation enriched
+
+```{r u3ge, fig.height=10, fig.width=8, fig.cap="Violin plots showing expression of genes of interest for Unknown-3 across Unknown clusters."}
+u3_ge <- c("TCL1A", "E2F2", "NCAPG", "BUB1B", "MYB", # markers
+           "MKI67", "TOP2A", "PCNA",   # cell cycle
+           # lineage markers
+           "CD79A", "MS4A1", "CD19",  # B cells
+           "CD3D", "CD3E", "CD8A"     # T cells
+           )
+
+VlnPlot(s_se, 
+        features = u3_ge,
+        split.by = "annot",
+        pt.size = 0.1,
+        ncol = 4) 
+```
+
+```{r barphase, fig.cap="Bar plot showing the distribution of cell cycle phases across Unknown clusters."}
+ggplot(s_se@meta.data, aes(x = annot, fill = Phase)) +
+  geom_bar(position = "fill") +
+  theme_classic() +
+  labs(y = "Proportion") +
+  scale_fill_brewer(palette = "Set1")
+```
+
+Based on `Unknown-3` spots being highly proliferative (most cells in S/G2M phases) as seen in Figure \@ref(fig:barphase) we can label this cluster as `Proliferation`. Also, we have both a strong B and T cell identity.
+
+## Unknown-4
+
+As we saw previously, `Unknown-4` is most likely a muscle-fibro cluster and in this analysis it is confirmed by strong muscle signatures (CASQ2, KCNAB1, GJA5, ACAN) and muscle-related GO terms.
+
+```{r u4ge, fig.height=20, fig.width=8, fig.cap="Violin plots showing expression of genes of interest for Unknown-4 across Unknown clusters."}
+u4_ge <- c("RERGL", "WFDC1", "CASQ2", "ACAN", "GJA5", # markers
+           "PDPN", "THY1", "CCL19", "CCL21", "IL7", "CXCL12",  # FRCs
+           "ACTA2", "MYH11", "TAGLN", "CNN1", # smooth muscle
+           "NOTCH3", "PDGFRB",
+           "RGS5", "CSPG4", # pericytes
+           "PROX1", "LYVE1", "FLT4", # LECs
+           "VWF", "PECAM1", "CDH5", # BECs
+           "COL1A1", "COL1A2", "DCN", "LUM" # mesenchymal/fibro
+           )
+
+VlnPlot(s_se, 
+        features = u4_ge,
+        split.by = "annot",
+        pt.size = 0.1, 
+        ncol = 4) 
+```
+
+# Unknown-1 cluster
+
+fer enrichment de tots els unknowns amb els mgs aveure q surt
+reconfirm clusters 2-4 and investigaste 1, do also violin pts, ...
+## GO-BP enrichment
+
+```{r}
+markers_all <- "{st_dt}/mgs-lymph-node.rds" %>%
+    glue::glue() %>%
+    here::here() %>%
+  readRDS(file = .)
+markers_all <- subset(markers_all, cluster %in% c("3", "5", "8", "13"))
+table(markers_all$cluster)
+
+sign_all <-  markers_all %>%
+  filter(p_val_adj < 0.01 & abs(avg_log2FC) > log2(1.5))
+table(sign_all$cluster)
+
+go_results_all <- list()
+for (clust in unique(sign_all$cluster) ) {
+  
+  genes <- sign_all %>%
+    filter(cluster == clust) %>%
+    pull(gene)
+  entrez <- bitr(genes, fromType = "SYMBOL", toType = "ENTREZID", OrgDb = org.Hs.eg.db)
+  
+  go <- enrichGO(
+    gene = entrez$ENTREZID,
+    OrgDb = org.Hs.eg.db,
+    ont = "BP",
+    pAdjustMethod = "BH",
+    qvalueCutoff = 0.05
+  )
+  go_results_all[[clust]] <- go
+  
+  print(dotplot(go, showCategory = 15) + ggtitle(clust))
+}
+```
+
+sassemblavas molt a mitho
+
+# Save data
+
+```{r}
+annotation_dir <- glue("{st_odt}/1-annotation") %>% here::here()
+dir.create(annotation_dir, recursive = TRUE, showWarnings = FALSE)
+
+glue("{annotation_dir}/1-annotation-ln_mgs.rds") %>%
+  saveRDS(object = markers, file = .)
+glue("{annotation_dir}/1-annotation-ln_goBP.rds") %>%
+  saveRDS(object = go_results, file = .)
+```
+
+
+
+```{r}
+```
+
+```{r}
+```
+
+```{r}
+```
+
+```{r}
+```
+
+
+# Re-labeling
+
+
+# Session Information
+
+```{r}
+sessionInfo()
+```
+
+
+ficar exploracio inicial, recap de `3-report-st`
+- Label muscle-fibro as muscle-fibro-1 Unknown-4 cluster as muscle-fibro-2
+- Do DE analysis of Unknown-2/3/4 to see what are the differences between them, they all seem musle/fibro-related
+    (between them: 2 vs 3/4, 3 vs 2/4 and 4 vs 2/3)
