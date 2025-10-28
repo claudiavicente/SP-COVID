@@ -1,5 +1,5 @@
 ---
-title: "Annotation 1 - LN Unknown Clusters Exploration (DE Analysis)"
+title: "Annotation 1 - LN Unknown Clusters Exploration"
 author: "Clàudia Vicente"
 date: "`r format(Sys.time(), '%d %B, %Y')`"
 output:
@@ -48,7 +48,7 @@ options(width = 1200)
 
 ```{r, eval = FALSE, include = FALSE}
 rmarkdown::render(
-  "1-annot-ln.Rmd",
+  "1-annotation-ln.Rmd",
   output_format = NULL,
   output_dir = "{st_html}" %>%
                         glue::glue() %>%
@@ -120,14 +120,11 @@ wrap_plots(p, ncol = 4) /
 
 ```{r propln, fig.cap="Bar plots showing the proportion of each cluster across lung samples."}
 se_ln@meta.data %>%
-  group_by(study_id, annot) %>%
-  summarise(count = n(), .groups = 'drop') %>%
-  group_by(study_id) %>%
-  mutate(proportion = count / sum(count)) %>%
-  
-  ggplot(aes(x = study_id, y = proportion, fill = annot)) +
-  geom_bar(stat = "identity", position = "stack") +
+  ggplot(aes(x = study_id, fill = annot)) +
+  geom_bar(position = "fill") +
   labs(x = "Study ID", y = "Proportion") +
+  scale_y_continuous(labels = scales::percent_format()) +
+  scale_fill_manual(values = palette) +
   theme_void() +
   theme(
     axis.text = element_text(color = "black", size = 10),
@@ -135,11 +132,8 @@ se_ln@meta.data %>%
     axis.title = element_text(color = "black", size = 11),
     axis.title.y = element_text(angle = 90),
     legend.text = element_text(size = 9),
-    legend.title = element_text(size = 10),
-  ) +
-  guides(fill = guide_legend(ncol = 2)) +
-  scale_y_continuous(labels = scales::percent_format()) +
-  scale_fill_manual(values = palette)
+    legend.title = element_text(size = 10)) + 
+  guides(fill = guide_legend(ncol = 2))
 ```
 
 We also noticed that **we have 4 unknown clusters**, so here we will continue investigating these clusters.
@@ -157,10 +151,12 @@ VlnPlot(subset(se_ln, annot %in% c("Unknown-2", "Unknown-3", "Unknown-4", "Muscl
         features = c("MYH11", "DES", "MYLK", "ACTG2", "ACTA2", "MYL9","TAGLN", "MGP"),
         group.by = "annot",
         pt.size = 0.1,
+        alpha = 0.3,
         ncol = 2)
 ```
 
 # DE analysis
+
 Starting from this point, we will perform a one-vs-all DE analysis for `Unknown2–4` to identify genes that differentiate each cluster from the others.
 
 ```{r}
@@ -168,6 +164,7 @@ s_se <- subset(se_ln, annot %in% c("Unknown-2", "Unknown-3", "Unknown-4"))
 markers <- FindAllMarkers(
   object = s_se,
   assay = "Spatial",
+  only.pos = TRUE,
   min.pct = 0.1
 )
 table(markers$cluster)
@@ -179,7 +176,7 @@ table(sign$cluster)
 
 ## Volcano plots
 
-```{r}
+```{r volcano, fig.cap="Volcano plot of marker genes for Unknown-2-4 clusters."}
 volcano <- function(t) {
   pThreshold <- max(t$p_val[t$p_val_adj < 0.01])
   
@@ -192,7 +189,7 @@ volcano <- function(t) {
   names(keyvals.colour)[keyvals.colour == 'red'] <- 'Upregulated'
   names(keyvals.colour)[keyvals.colour == 'gray80'] <- 'Not significant'
 
-  EnhancedVolcano(t, lab = t$gene, xlim = c(-10, 10),
+  EnhancedVolcano(t, lab = t$gene, xlim = c(0, 10),
                   x = 'avg_log2FC', y = 'p_val', pCutoff = pThreshold, FCcutoff = log2(1.5),
                   pointSize = 1.5, labSize = 3.0,
                   title = t$cluster, subtitle = "", colCustom = keyvals.colour,
@@ -208,23 +205,18 @@ for (clust in unique(sign$cluster) ) {
 
 ## Heatmap (top markers)
 
-```{r}
+```{r hm, fig.cap="Heatmap showing top 10 marker genes for Unknown-2-4 clusters.", dev='svglite'}
 top10 <- sign %>%
   group_by(cluster) %>%
   top_n(10, avg_log2FC)
 
 DoHeatmap(s_se, features = top10$gene, label = FALSE) + 
   scale_fill_gradient2(low = "blue", mid = "white", high = "red", midpoint = 0)
-
-sign %>% filter(cluster == "Unknown-2") %>% pull(gene)
-top10 %>% filter(cluster == "Unknown-3") %>% pull(gene)
-markers %>% filter(gene %in% gene_vec)
-gene_dict
 ```
 
 ## GO-BP enrichment
 
-```{r}
+```{r go, fig.height=8, fig.cap="Dot plot of enriched GO-BP for Unknown-2-4 clusters.", dev='svglite'}
 go_results <- list()
 for (clust in unique(sign$cluster) ) {
   
@@ -248,7 +240,7 @@ for (clust in unique(sign$cluster) ) {
 
 # Interpretation
 
-```{r uspdist, fig.height=4, fig.width=12, fig.cap="Spatial plots showing the distribution of Unknown clusters across LN samples."}
+```{r uspdist, fig.height=4, fig.width=12, fig.cap="Spatial plots showing the distribution of Unknown clusters across LN samples.", dev='svglite'}
 SpatialDimPlot(s_se,
                group.by = "annot",
                pt.size.factor = 1000,
@@ -257,33 +249,27 @@ SpatialDimPlot(s_se,
 
 ## Unknown-2
 
-Based on the results we can see that this group of spots present mixed populations markers and evidence of stress response.
+Based on the results we can see that this group of spots present stromal/fibro signature.
 
 ```{r u2ge, fig.height=10, fig.width=8, fig.cap="Violin plots showing expression of genes of interest for Unknown-2 across Unknown clusters."}
-u2_ge <- c("MT-CO1", "MT-ND2", "ACKR1", "PLA2G2A", "PAX5", # markers
-           "VWF", "PECAM1", "CDH5",  # endothelial
-           "HSPA1A", "HSPB1",# stress markers
-           "MT1X", "MT1A", "MT1M",   # metallothioneins 
-           "PTPRC",
-           "CD79A", "MS4A1" # B cells
-           )
+u2_ge <- c(# Fibro
+  "COL1A2", "FN1", "PDGFRA", "PDGFRB",
+  # Inflammatory
+  "POSTN", "THBS2", "HBEGF", "PTGS2",
+  # Chemokine/immune 
+  "CCL19", "CCL2", "CXCL12", "IL7",
+  # Myeloid 
+  "CD68", "TYROBP",
+  # Hypoxia
+  "VEGFA", "HIF1A")
 
 VlnPlot(s_se, 
         features = u2_ge,
         split.by = "annot",
         pt.size = 0.1,
+        alpha = 0.3,
         ncol = 4) 
 ```
-
-```{r u2qc, fig.height=3, fig.width=10, fig.cap="Violin plots showing QC metrics across Unknown clusters."}
-VlnPlot(s_se,
-        features = c("nCount_Spatial", "nFeature_Spatial", "percent.mito", "percent.ribo"),
-        split.by = "annot",
-        pt.size = 0.1,
-        ncol = 4)
-```
-
-From Figures \@ref(fig:u2ge) and \@ref(fig:u2qc) we can suspect that `Unknown-2` cluster consists of low quality or stressed cells, as we see lower features detected and high mitochondrial gene expression compared to the other clusters. We also have high metallothionein expression indicating stress response and endothelial identity (ACKR1+ VWF+).
 
 ## Unknown-3 
 
@@ -293,17 +279,23 @@ Based on the found marker genes and GO enrichment results, we have evidence of `
  - We have several mitotic-related processes and lymphocyte differentiation enriched
 
 ```{r u3ge, fig.height=10, fig.width=8, fig.cap="Violin plots showing expression of genes of interest for Unknown-3 across Unknown clusters."}
-u3_ge <- c("TCL1A", "E2F2", "NCAPG", "BUB1B", "MYB", # markers
-           "MKI67", "TOP2A", "PCNA",   # cell cycle
-           # lineage markers
-           "CD79A", "MS4A1", "CD19",  # B cells
-           "CD3D", "CD3E", "CD8A"     # T cells
-           )
+u3_ge <- c(# Cell cycle/proliferation
+  "MKI67", "TOP2A", "CDK1", "CCNB1",
+  # DNA replication
+  "MCM2", "MCM5", "PCNA", "RRM2",
+  # Mitotic machinery
+  "AURKB", "BUB1", "CENPE", "KIF11",
+  # Lymphocyte
+  "CD3D", # T
+  "CD79A", # B
+  # Stem/progenitor
+  "SOX4", "HMGB2")
 
 VlnPlot(s_se, 
         features = u3_ge,
         split.by = "annot",
         pt.size = 0.1,
+        alpha = 0.3,
         ncol = 4) 
 ```
 
@@ -315,37 +307,37 @@ ggplot(s_se@meta.data, aes(x = annot, fill = Phase)) +
   scale_fill_brewer(palette = "Set1")
 ```
 
-Based on `Unknown-3` spots being highly proliferative (most cells in S/G2M phases) as seen in Figure \@ref(fig:barphase) we can label this cluster as `Proliferation`. Also, we have both a strong B and T cell identity.
+Based on `Unknown-3` spots being highly proliferative (most cells in S/G2M phases) as seen in Figure \@ref(fig:barphase) we could label this cluster as `Proliferation`. Also, we have both a strong B and kind of T cell identity.
 
 ## Unknown-4
 
-As we saw previously, `Unknown-4` is most likely a muscle-fibro cluster and in this analysis it is confirmed by strong muscle signatures (CASQ2, KCNAB1, GJA5, ACAN) and muscle-related GO terms.
+As we saw previously, `Unknown-4` is most likely a muscle-fibro cluster and in this analysis it is confirmed by a strong muscle signature (CASQ2, KCNAB1, GJA5, ACAN) and muscle-related GO terms.
 
-```{r u4ge, fig.height=20, fig.width=8, fig.cap="Violin plots showing expression of genes of interest for Unknown-4 across Unknown clusters."}
-u4_ge <- c("RERGL", "WFDC1", "CASQ2", "ACAN", "GJA5", # markers
-           "PDPN", "THY1", "CCL19", "CCL21", "IL7", "CXCL12",  # FRCs
-           "ACTA2", "MYH11", "TAGLN", "CNN1", # smooth muscle
-           "NOTCH3", "PDGFRB",
-           "RGS5", "CSPG4", # pericytes
-           "PROX1", "LYVE1", "FLT4", # LECs
-           "VWF", "PECAM1", "CDH5", # BECs
-           "COL1A1", "COL1A2", "DCN", "LUM" # mesenchymal/fibro
-           )
+```{r u4ge, fig.height=10, fig.width=8, fig.cap="Violin plots showing expression of genes of interest for Unknown-4 across Unknown clusters."}
+u4_ge <- c(#Fibro
+  "TAGLN", "ACTA2", "MYL9", "TPM2",
+  "COL1A2", "FN1", "PDGFRA", "PDGFRB",
+  # Muscle
+  "LPP", "SYNM", "SORBS1", "NEXN",
+  "POSTN", "THBS2",
+  # Cell adhesion/ECM
+  "ITGA5", "VCAN")
 
 VlnPlot(s_se, 
         features = u4_ge,
         split.by = "annot",
         pt.size = 0.1, 
-        ncol = 4) 
+        ncol = 4,
+        alpha = 0.3) 
 ```
 
 # Unknown-1 cluster
 
-fer enrichment de tots els unknowns amb els mgs aveure q surt
-reconfirm clusters 2-4 and investigaste 1, do also violin pts, ...
+Now we are going to repeat the enrichment but using the markers obtained from running `FindAllMarkers()` for all the clusters, so we can confirm our findings from clusters `Unknown2-4` and inspect `Unknown-1` too. 
+
 ## GO-BP enrichment
 
-```{r}
+```{r goall, fig.height=10, fig.cap="Dot plot of enriched GO-BP for Unknown-1-4 clusters."}
 markers_all <- "{st_dt}/mgs-lymph-node.rds" %>%
     glue::glue() %>%
     here::here() %>%
@@ -378,46 +370,59 @@ for (clust in unique(sign_all$cluster) ) {
 }
 ```
 
-sassemblavas molt a mitho
+## Interpretation
+
+As we mentioned before, the cluster `Unknown-1` (3) patterns of expression of the set of genes of interest are really similar to the `Mitochondial` cluster (1). This is confirmed by the results of the enrichment as the cluster shows nuclear/RNA processing functions and some mitochondrial metabolism. As we can see in Figure \@ref(fig:vlnmitou1) below, both clusters have really similar levels of mitochondrial expression.
+
+```{r vlnmitou1, fig.cap="Violin plot showing percentage of MT- gene expression across all clusters."}
+VlnPlot(se_ln,
+        features = "percent.mito",
+        group.by = "Spatial_snn_res.0.75",
+        pt.size = 0.1,
+        alpha = 0.3) + 
+  NoLegend() + 
+  scale_fill_manual(values = ifelse(levels(se_ln$Spatial_snn_res.0.75) %in% c("1", "3"), "#E64B35", "grey80"))
+```
+
+Regarding `Unknown-2`, we now see really different BP enriched, mainly related to detoxification and a strong stress response. We also have extracellular organization related terms suggesting some stromal identity as we saw in Figure \@ref(fig:u2ge).
+
+```{r, fig.height=5, fig.width=8, fig.cap="Violin plots showing expression of genes of interest for Unknown-2 across Unknown clusters."}
+u2_ge <- c(# Stress 
+  "HSPA1A", "HSPB1", "GSTP1",
+  # Metallothioneins
+  "MT1X", "MT1A", "MT1E", "MT1M")
+
+VlnPlot(s_se, 
+        features = u2_ge,
+        split.by = "annot",
+        pt.size = 0.1,
+        ncol = 4) 
+```
+
+Regarding `Unknown-3` and `-4`, we can be pretty sure about the previous interpretation, confirming that these consists of proliferating cells and muscle/fibro cells respectively.
+
+# Annotation
+
+```{r}
+# re-label unknown clusters
+```
 
 # Save data
 
-```{r}
+```{r, eval=FALSE}
 annotation_dir <- glue("{st_odt}/1-annotation") %>% here::here()
 dir.create(annotation_dir, recursive = TRUE, showWarnings = FALSE)
 
 glue("{annotation_dir}/1-annotation-ln_mgs.rds") %>%
   saveRDS(object = markers, file = .)
-glue("{annotation_dir}/1-annotation-ln_goBP.rds") %>%
+glue("{annotation_dir}/1-annotation-ln_goBP_2-4.rds") %>%
   saveRDS(object = go_results, file = .)
+glue("{annotation_dir}/1-annotation-ln_goBP_uall.rds") %>%
+  saveRDS(object = go_results_all, file = .)
 ```
-
-
-
-```{r}
-```
-
-```{r}
-```
-
-```{r}
-```
-
-```{r}
-```
-
-
-# Re-labeling
-
 
 # Session Information
 
 ```{r}
 sessionInfo()
 ```
-
-
-ficar exploracio inicial, recap de `3-report-st`
-- Label muscle-fibro as muscle-fibro-1 Unknown-4 cluster as muscle-fibro-2
-- Do DE analysis of Unknown-2/3/4 to see what are the differences between them, they all seem musle/fibro-related
-    (between them: 2 vs 3/4, 3 vs 2/4 and 4 vs 2/3)

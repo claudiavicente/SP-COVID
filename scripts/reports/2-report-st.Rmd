@@ -112,14 +112,14 @@ tab <- s_meta %>%
     values_fill = ""
   ) %>%
   mutate(
-    across(c(everything(), -donor_id, -disease_group), ~ifelse(. != "", "x", ""))
+    across(-c(donor_id, disease_group), ~ifelse(. != "", "x", ""))
   ) %>%
   arrange(disease_group, donor_id) %>%
-  rename(Donor = donor_id, Stage = disease_group, Lung = lung, `Lymph node` = `lymph-node`)
+  rename_with(~str_replace_all(., "[_-]", " ") %>% str_to_title())
 
 s_cols <- setNames(
-  c("#4AE38A", "#168D48","#1F78B4", "#0D542B")[1:length(unique(tab$Stage[tab$Stage != ""]))],
-  unique(tab$Stage[tab$Stage != ""])
+  c("#4AE38A", "#168D48","#1F78B4", "#0D542B")[1:length(unique(tab$`Disease Group`[tab$`Disease Group` != ""]))],
+  unique(tab$`Disease Group`[tab$`Disease Group` != ""])
 )
 
 kable(tab, format = "html", booktabs = TRUE, escape = FALSE, align = "c") %>%
@@ -128,7 +128,7 @@ kable(tab, format = "html", booktabs = TRUE, escape = FALSE, align = "c") %>%
                 position = "center") %>%
   row_spec(6, color = "red") %>%
   column_spec(1, color = "#404040", bold = TRUE) %>%
-  column_spec(2, color = s_cols[tab$Stage]) %>%
+  column_spec(2, color = s_cols[tab$`Disease Group`]) %>%
   column_spec(3, color = "black") 
 ```
 

@@ -164,16 +164,13 @@ lapply(unique(se_lung$study_id), function(study_id) {
   theme(legend.position = "bottom")
 ```
 
-```{r propl, fig.cap="Bar plots showing the proportion of each cluster across lung samples."}
+```{r propl, fig.cap="Bar plot showing the proportion of each cluster across lung samples."}
 se_lung@meta.data %>%
-  group_by(study_id, newID) %>%
-  summarise(count = n(), .groups = 'drop') %>%
-  group_by(study_id) %>%
-  mutate(proportion = count / sum(count)) %>%
-  
-  ggplot(aes(x = study_id, y = proportion, fill = newID)) +
-  geom_bar(stat = "identity", position = "stack") +
+  ggplot(aes(x = study_id, fill = newID)) +
+  geom_bar(position = "fill") + 
   labs(x = "Study ID", y = "Proportion") +
+  scale_y_continuous(labels = scales::percent_format()) +
+  scale_fill_manual(values = palette) +
   theme_void() +
   theme(
     axis.text = element_text(color = "black", size = 10),
@@ -181,10 +178,7 @@ se_lung@meta.data %>%
     axis.title = element_text(color = "black", size = 11),
     axis.title.y = element_text(angle = 90),
     legend.text = element_text(size = 9),
-    legend.title = element_text(size = 10)
-  ) +
-  scale_y_continuous(labels = scales::percent_format()) +
-  scale_fill_manual(values = palette)
+    legend.title = element_text(size = 10))
 ```
 
 ### % SARS-CoV-2 exploration
@@ -299,16 +293,13 @@ wrap_plots(p, ncol = 4) /
   plot_layout(heights = c(16, 4)) 
 ```
 
-```{r propln, fig.cap="Bar plots showing the proportion of each cluster across lung samples."}
+```{r propln, fig.cap="Bar plot showing the proportion of each cluster across LN samples."}
 se_ln@meta.data %>%
-  group_by(study_id, annot) %>%
-  summarise(count = n(), .groups = 'drop') %>%
-  group_by(study_id) %>%
-  mutate(proportion = count / sum(count)) %>%
-  
-  ggplot(aes(x = study_id, y = proportion, fill = annot)) +
-  geom_bar(stat = "identity", position = "stack") +
+  ggplot(aes(x = study_id, fill = annot)) +
+  geom_bar(position = "fill") + 
   labs(x = "Study ID", y = "Proportion") +
+  scale_y_continuous(labels = scales::percent_format()) +
+  scale_fill_manual(values = palette) +
   theme_void() +
   theme(
     axis.text = element_text(color = "black", size = 10),
@@ -316,11 +307,8 @@ se_ln@meta.data %>%
     axis.title = element_text(color = "black", size = 11),
     axis.title.y = element_text(angle = 90),
     legend.text = element_text(size = 9),
-    legend.title = element_text(size = 10),
-  ) +
-  guides(fill = guide_legend(ncol = 2)) +
-  scale_y_continuous(labels = scales::percent_format()) +
-  scale_fill_manual(values = palette)
+    legend.title = element_text(size = 10)) +
+  guides(fill = guide_legend(ncol = 2))
 ```
 
 ### % SARS-CoV-2 exploration
