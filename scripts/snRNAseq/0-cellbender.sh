@@ -11,7 +11,7 @@
 source /home/groups/singlecell/cvicente/miniconda3/etc/profile.d/conda.sh
 conda activate cellbender
 
-INPUT_FILE="/scratch_isilon/groups/singlecell/shared/projects/covid-pascual-reguant/data/snRNAseq/[GSM*.h5]" # e.g. file name
+INPUT_FILE="/scratch_isilon/groups/singlecell/shared/projects/covid-pascual-reguant/data/snRNAseq/<GSM*.h5>" # e.g. file name
 
 base=$(basename "$INPUT_FILE" .h5)
 

@@ -1,0 +1,226 @@
+---
+title: "Quality Control 0 - Visium QC"
+author: "Clàudia Vicente"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  bookdown::html_document2:
+    theme: cosmo
+    highlight: pygments
+    number_sections: true
+    global_numbering: true  
+    toc: true
+    toc_depth: 3
+    toc_float: true
+    df_print: paged
+editor_options: 
+  markdown: 
+    wrap: sentence
+  chunk_output_type: inline
+---
+
+# Introduction
+
+Here a basic QC analysis of the mapping metrics from Spaceranger 2.0.1 and of of Visium slides is performed.
+
+```{r setup, include=FALSE}
+set.seed(123)
+source(here::here("misc/paths.R"))
+
+knitr::knit_hooks$set(
+  memory = function(before, options, envir) {
+    if (!before) {
+      gc(verbose = FALSE)
+    }
+  }
+)
+knitr::opts_chunk$set(memory = TRUE, echo = TRUE, message = FALSE, warning = FALSE, tidy = TRUE, tidy.opts = list(width.cutoff = 60),
+                      dev="svg",  out.width = "100%", fig.align = 'center',
+                      
+                      fig.path = here::here(paste0("{st_plots}" %>%
+                                                     glue::glue() %>%
+                                                     here::here(),
+                                                   tools::file_path_sans_ext(basename(rstudioapi::getSourceEditorContext()$path)),
+                                                   "_files/")
+                                            )
+                      )
+options(width = 1200)
+```
+
+```{r, eval = FALSE, include = FALSE}
+rmarkdown::render(
+  "0-QC-st.Rmd",
+  output_format = NULL,
+  output_dir = "{st_html}" %>%
+                        glue::glue() %>%
+                        here::here()
+)
+```
+
+# Libraries
+
+```{r}
+library(RColorBrewer)
+
+```
+
+# QC
+
+We will start by exploring mapping and sequencing metrics.
+
+## Load data
+
+```{r}
+meta <- load_sample_metadata() 
+ids <- meta %>% 
+  pull(donor_id) %>%                  
+  unique()  
+
+files <- list.files(path = "{st_dt}/QC_metrics/" %>%
+  glue::glue() %>%
+  here::here(), 
+  pattern = "-metrics_summary\\.csv$", full.names = TRUE)
+
+metrics <- lapply(files, function(f) {
+  
+  file_base <- basename(f)
+  base_clean <- str_remove(file_base, "-metrics_summary\\.csv$")
+  
+  parts <- str_split(base_clean, "-", n = 2)[[1]]
+  sample_id <- parts[1]
+  tissue <- parts[2]  
+  
+  tmp_df <- read_csv(f, show_col_types = FALSE)
+  tmp_df <- tmp_df %>%
+    dplyr::mutate(
+      sample_id = sample_id,
+      tissue = tissue
+    ) %>%
+    dplyr::select(-c(`Sample ID`)) %>%
+    dplyr::select(sample_id, tissue, everything())
+  
+  return(tmp_df)
+}) %>%
+  bind_rows()
+
+colnames(metrics) <- colnames(metrics) %>%
+  str_replace_all(" ", "_") %>%
+  str_replace_all("\\(|\\)", "")
+
+metrics <- metrics %>%
+  mutate(sample_id_tissue = glue("{sample_id}-{tissue}"))
+```
+
+## Sequencing 
+
+```{r, fig.height=3, fig.width=10}
+colnames(metrics)
+palette <- colorRampPalette(colors = brewer.pal(8, "Paired"))(2)
+names(palette) <- unique(metrics$tissue)
+
+l <- c("Q30_Bases_in_Barcode", "Q30_Bases_in_RNA_Read", "Q30_Bases_in_UMI")
+
+metrics_long <- metrics %>%
+  pivot_longer(cols = all_of(l), names_to = "Metric", values_to = "Value")
+
+ggplot(metrics_long, aes(x = sample_id_tissue, y = Value, fill = tissue)) +
+  geom_bar(stat = "identity", position = position_dodge()) +
+  facet_wrap(~Metric, labeller = labeller(Metric = c("Q30_Bases_in_Barcode" = "in Barcode", "Q30_Bases_in_RNA_Read" = "in RNA Read", "Q30_Bases_in_UMI" = "in UMI"))) +
+  scale_fill_manual(values = palette) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  labs(x = "Sample ID & Tissue", y = "Q30 Bases (%)", title = "Metrics by Sample and Tissue")
+```
+
+```{r}
+```
+
+```{r}
+```
+
+```{r}
+```
+
+```{r}
+```
+
+```{r}
+```
+
+```{r}
+```
+
+```{r}
+```
+
+```{r}
+```
+
+```{r}
+```
+
+```{r}
+```
+
+```{r}
+```
+
+```{r}
+```
+
+```{r}
+```
+
+```{r}
+```
+
+```{r}
+```
+
+```{r}
+```
+
+```{r}
+```
+
+```{r}
+```
+
+```{r}
+```
+
+```{r}
+```
+
+```{r}
+```
+
+```{r}
+```
+
+```{r}
+```
+
+```{r}
+```
+
+```{r}
+```
+
+```{r}
+```
+
+```{r}
+```
+
+```{r}
+```
+
+
+
+
+
+
+
+
+use SpotSweeper - Spatially aware quality control for spatial transcriptomics
+sample-specific QC
