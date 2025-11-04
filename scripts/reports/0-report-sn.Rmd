@@ -1,5 +1,5 @@
 ---
-title: "Project Report 1 - snRNA-seq Data & Annotation Exploration"
+title: "Project Report 0 - snRNA-seq Data & Annotation Exploration"
 author: "Clàudia Vicente"
 date: "`r format(Sys.time(), '%d %B, %Y')`"
 output:
@@ -41,7 +41,7 @@ options(width = 1200)
 
 ```{r, eval = FALSE, include = FALSE}
 rmarkdown::render(
-  "1-report-sn.Rmd",
+  "0-report-sn.Rmd",
   output_format = NULL,
   output_dir = "{rep_html}" %>%
                         glue::glue() %>%

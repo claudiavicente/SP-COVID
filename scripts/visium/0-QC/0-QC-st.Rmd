@@ -59,11 +59,13 @@ rmarkdown::render(
 # Libraries
 
 ```{r}
-library(ggplot)
+library(kableExtra)
+library(ggplot2)
 library(ggrepel)
 library(RColorBrewer)
 library(Seurat)
 library(ComplexHeatmap)
+library(patchwork)
 ```
 
 # Metrics QC
@@ -113,26 +115,23 @@ metrics <- metrics %>%
   mutate(sample_id_tissue = glue("{sample_id}-{tissue}"))
 ```
 
-```{r}
-colnames(metrics)
-palette <- colorRampPalette(colors = brewer.pal(8, "Paired"))(2)
-names(palette) <- unique(metrics$tissue)
-```
-
 ## Sequencing 
 
-As we can see in Figure \@ref(fig:q30) Q30 bases in percentage are really near to 1 for all samples indicating reliability for base calling.
+As we can see in Figure \@ref(fig:q30), Q30 bases in percentage are really near to 1 for all samples indicating reliability for base calling.
 
 ```{r q30, fig.height=3, fig.width=10, fig.cap="Bar plots showing percentage of Q30 bases per sample."}
 l <- c("Q30_Bases_in_Barcode", "Q30_Bases_in_RNA_Read", "Q30_Bases_in_UMI")
-
+palette <- colorRampPalette(colors = brewer.pal(8, "Paired"))(2)
+names(palette) <- unique(metrics$tissue)
 metrics_long <- metrics %>%
   pivot_longer(cols = all_of(l), names_to = "Metric", values_to = "Value")
 
 ggplot(metrics_long, aes(x = sample_id_tissue, y = Value, fill = tissue)) +
   geom_bar(stat = "identity", position = position_dodge()) +
   ylim(0, 1) +
-  facet_wrap(~Metric, labeller = labeller(Metric = c("Q30_Bases_in_Barcode" = "in Barcode", "Q30_Bases_in_RNA_Read" = "in RNA Read", "Q30_Bases_in_UMI" = "in UMI"))) +
+  facet_wrap(~Metric, labeller = labeller(Metric = c("Q30_Bases_in_Barcode" = "in Barcode", 
+                                                     "Q30_Bases_in_RNA_Read" = "in RNA Read", 
+                                                     "Q30_Bases_in_UMI" = "in UMI"))) +
   scale_fill_manual(values = palette) +
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
@@ -144,9 +143,10 @@ ggplot(metrics_long, aes(x = sample_id_tissue, y = Value, fill = tissue)) +
 Next, we will check the quality of the mapping step. We aim to obtain libraries with a high percentage of confidently mapped reads, and specially a high percentage of exonic reads, which correspond with gene expression or RNAs. The reads mapping to intergenic regions suggest contamination of ambient DNA, whereas reads mapping to intronic regions may come from pre-mRNAs or mature spliced isoforms that retain certain introns.
 
 ```{r map, fig.cap="Bar plots showing percentage reads mapped confindently per sample."}
-l <- c("Reads_Mapped_Confidently_to_Genome", "Reads_Mapped_Confidently_to_Intergenic_Regions",
-       "Reads_Mapped_Confidently_to_Intronic_Regions", "Reads_Mapped_Confidently_to_Exonic_Regions")
-
+l <- c("Reads_Mapped_Confidently_to_Genome",
+       "Reads_Mapped_Confidently_to_Intergenic_Regions",
+       "Reads_Mapped_Confidently_to_Intronic_Regions", 
+       "Reads_Mapped_Confidently_to_Exonic_Regions")
 metrics_long <- metrics %>%
   pivot_longer(cols = all_of(l), names_to = "Metric", values_to = "Value")
 
@@ -184,7 +184,7 @@ The Figure \@ref(fig:sat) below shows that, most samples achieved 75-100% satura
 ggplot(metrics, aes(x = Mean_Reads_per_Spot / 1e3, y = Sequencing_Saturation, color = tissue)) +
   geom_point() +
   ylim(0, 1) +
-  scale_fill_manual(values = palette) +
+  scale_color_manual(values = palette) +
   geom_text_repel(aes(label = sample_id_tissue), size = 4) +
   theme_minimal() +
   labs(x = "Mean Reads per Spot (in thousands)", 
@@ -192,12 +192,12 @@ ggplot(metrics, aes(x = Mean_Reads_per_Spot / 1e3, y = Sequencing_Saturation, co
   NoLegend()
 ```
 
-As we can see in Figure \@ref(fig:depthcell), lymph node samples consistently detected more genes per spot than lung samples (1000-2000 genes). Sample S317-lung is an outlier with exceptionally high gene detection despite moderate sequencing depth.
+As we can see in Figure \@ref(fig:depthcell), lymph node samples consistently detected more genes per spot than lung samples (1000-2000 genes). Sample `S317-lung` is an outlier with exceptionally high gene detection despite moderate sequencing depth.
 
 ```{r depthcell, fig.cap="Scatterplot showing mean reads by median detected genes per spot per sample."}
 ggplot(metrics, aes(x = Mean_Reads_per_Spot / 1e3, y = Median_Genes_per_Spot, color = tissue)) +
   geom_point() +
-  scale_fill_manual(values = palette) +
+  scale_color_manual(values = palette) +
   geom_text_repel(aes(label = sample_id_tissue), size = 4) +
   theme_minimal() +
   labs(x = "Mean Reads per Spot (in thousands)", 
@@ -205,12 +205,12 @@ ggplot(metrics, aes(x = Mean_Reads_per_Spot / 1e3, y = Median_Genes_per_Spot, co
   NoLegend()
 ```
 
-Despite varying sequencing depths (`r round(min(metrics$Number_of_Reads)/1e6)`-`r round(max(metrics$Number_of_Reads)/1e6)`M reads), as we see in Figure \@ref(fig:depth) most samples plateau at detecting 20,000-25,000 total genes, suggesting comprehensive transcriptome coverage. The major outlier is S317-lymph node, which detected only `r metrics$Total_Genes_Detected[metrics$sample_id_tissue == "S317-lymph-node"]` genes despite very high read counts—this may indicate a technical problem requiring investigation in the remaining QC.
+Despite varying sequencing depths (`r round(min(metrics$Number_of_Reads)/1e6)`-`r round(max(metrics$Number_of_Reads)/1e6)`M reads), as we see in Figure \@ref(fig:depth) most samples plateau at detecting 20,000-25,000 total genes, suggesting comprehensive transcriptome coverage. The major outlier is `S317-lymph-node`, which detected only `r metrics$Total_Genes_Detected[metrics$sample_id_tissue == "S317-lymph-node"]` genes despite very high read counts—this may indicate a technical problem requiring investigation in the remaining QC.
 
 ```{r depth, fig.cap="Scatterplot showing mean reads by median detected genes per spot per sample."}
 ggplot(metrics, aes(x = Number_of_Reads / 1e6, y = Total_Genes_Detected, color = tissue)) +
   geom_point() +
-  scale_fill_manual(values = palette) +
+  scale_color_manual(values = palette) +
   geom_text_repel(aes(label = sample_id_tissue), size = 4) +
   theme_minimal() +
   labs(x = "Library size (in millions)", y = "Total Genes Detected") +
@@ -249,6 +249,8 @@ se <- merge(
 
 ## QC metrics summary per sample
 
+First, looking at the main QC metrics by sample, we see in Figure \@ref(fig:gen) and Table \@ref(tab:summ) normal distribution of `n_counts` and `n_features` across all samples. It is worth noting that the `prolonged_case_4-lymph-node` and `control_case_1-lung` samples have a high mitochondrial content, spiking toward 20% or even higher. Again, there are some outlier spots reaching up to 40% for ribosomal content, particularly in the `control_case_2-lymph-node` sample.
+
 ```{r summ, echo=FALSE, tab.cap="Summary statistics per sample of the main QC metrics."}
 tab <- se@meta.data %>%
   group_by(cond_tissue) %>%
@@ -269,14 +271,12 @@ tab <- se@meta.data %>%
     median_percent_ribo = median(percent.ribo),
     mean_percent_SCoV2 = mean(percent.SCoV2),
     median_percent_SCoV2 = median(percent.SCoV2),
-    .groups = 'drop'
-  )
+    .groups = 'drop')
 
 t_cols <- palette
-s_cols <- setNames(
-  c("#4AE38A", "#168D48","#1F78B4", "#0D542B")[1:length(unique(tab$disease_group[tab$disease_group != ""]))],
-  unique(tab$disease_group[tab$disease_group != ""])
-)
+s_cols <- setNames(c("#4AE38A", "#168D48","#1F78B4", "#0D542B")
+                   [1:length(unique(tab$disease_group[tab$disease_group != ""]))],
+                   unique(tab$disease_group[tab$disease_group != ""]))
 
 kable(tab[,-1], format = "html", booktabs = TRUE, escape = FALSE,
       col.names = c("ID","Tissue","Stage","Nº Spots", 
@@ -292,50 +292,37 @@ kable(tab[,-1], format = "html", booktabs = TRUE, escape = FALSE,
   add_header_above(c(" " = 4, "Nº Counts" = 3 , "Nº Features" = 3, "% Mitochondrial" = 2, "% Ribosomal" = 2, "% S-CoV-2" = 2))
 ```
 
+```{r gen, fig.height=10, fig.width=12, fig.cap="Violin plots showing the distribution of nº counts, nº features, percentage of mitochondrial and ribosomal genes per sample.", dev='svglite'}
+plt <- function(y_var, y_label, log = F) {
+  p <- ggplot(se@meta.data, aes(x = cond_tissue, y = {{ y_var }}, fill = disease_group)) +
+    geom_violin(trim = FALSE) +
+    geom_jitter(size = 0.1, alpha = 0.3) +
+    theme_classic() +
+    theme(axis.text.x = element_blank()) +
+    labs(x = "Sample", y = y_label) +
+    scale_fill_manual(values = c("#4AE38A", "#168D48","#1F78B4", "#0D542B")) +
+    NoLegend()
+  
+  if (log == T) {
+    p <- p + scale_y_log10()
+  } else {
+    p <- p + theme(axis.text.x = element_text(angle = 90, hjust = 1)) 
+  }
+  
+  return(p)
+}
 
-First, looking at the main QC metrics by sample, we see in Figure \@ref(fig:gen) and Table \@ref(tab:summ) normal distribution of `n_counts` and `n_features` across all samples. It is worth noting that the `prolonged_case_4-lymph-node` and `control_case_1-lung` samples have a high mitochondrial content, spiking toward 20% or even higher. Again, there are some outlier spots reaching up to 40% for ribosomal content, particularly in the `control_case_2-lymph-node` sample.
-
-```{r gen, fig.height=10 fig.cap="Violin plots showing the distribution of nª counts, nº features, percentage of mitochondrial and ribosomal genes per sample."}
-p1 <- ggplot(se@meta.data, aes(x = cond_tissue, y = nCount_Spatial, fill = disease_group)) +
-  geom_violin(trim = FALSE) +
-  geom_jitter(size = 0.1, alpha = 0.3) +
-  theme_classic() +
-  theme(axis.text.x = element_blank()) +
-  labs(x = "Sample", y = "UMI counts") +
-  scale_y_log10() +
-  NoLegend()
-
-p2 <- ggplot(se@meta.data, aes(x = cond_tissue, y = nFeature_Spatial, fill = disease_group)) +
-  geom_violin(trim = FALSE) +
-  geom_jitter(size = 0.1, alpha = 0.3) +
-  theme_classic() +
-  theme(axis.text.x = element_blank()) +
-  labs(x = "Sample", y = "Detected genes") +
-  scale_y_log10() +
-  NoLegend()
-
-p3 <- ggplot(se@meta.data, aes(x = cond_tissue, y = percent.mito, fill = disease_group)) +
-  geom_violin(trim = FALSE) +
-  geom_jitter(size = 0.1, alpha = 0.3) +
-  theme_classic() +
-  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
-  labs(x = "Sample", y = "Mitochondrial genes (%)") +
-  NoLegend()
-
-p4 <- ggplot(se@meta.data, aes(x = cond_tissue, y = percent.ribo, fill = disease_group)) +
-  geom_violin(trim = FALSE) +
-  geom_jitter(size = 0.1, alpha = 0.3) +
-  theme_classic() +
-  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
-  labs(x = "Sample", y = "Ribosomal genes (%)") +
-  NoLegend()
+p1 <- plt(nCount_Spatial, "UMI counts (Log 10)", T)
+p2 <- plt(nFeature_Spatial, "Detected genes (Log 10)", T)
+p3 <- plt(percent.mito, "Mitochondrial genes (%)")
+p4 <- plt(percent.ribo, "Ribosomal genes (%)")
 
 (p1 | p2) / (p3 | p4)
 ```
 
-Comparing UMI Counts versus Detected Genes in Figure \@ref(fig:cvsf), we can intuit a strong linear correlation between both variables for all samples. This is the expected behavior for high-quality data. Filtering of spots with high mitochondrial percentage could be applied.
+Comparing UMI Counts versus Detected Genes in Figure \@ref(fig:cvsf), we can intuit a strong linear correlation between both variables for all samples. This is the expected behavior for high-quality data. We also can notice that the spots with higher mitochondrial content, in `prolonged_case_4-lymph-node`, are also of low-quality, having low UMI counts and detected genes.
 
-```{r cvsf, fig.height=10, fig.cap="Scatter plots showing nº counts versus nº features per sample"}
+```{r cvsf, fig.height=10, fig.width=14, fig.cap="Scatter plots showing nº counts versus nº features per sample"}
 ggplot(se@meta.data, aes(x = nCount_Spatial, y = nFeature_Spatial, color = percent.mito)) +
   geom_point(alpha = 0.5, size = 0.5) +
   facet_wrap(~cond_tissue, scales = "free", ncol = 5) +
@@ -348,48 +335,39 @@ ggplot(se@meta.data, aes(x = nCount_Spatial, y = nFeature_Spatial, color = perce
 
 ## Outliers analysis
 
-Identify potential outlier samples
-Calculate z-scores and deviations for each metric
-Z-scores
-Deviations from mean
-2 SD threshold
+Now, we will identify potential outlier samples. We will calculate z-scores for each metric, defined by: 
+
+$$Z=\frac{X−μ}{σ}$$
+where, 
+
+ - **X** is the mean QC metric for a specific sample (e.g., `mean_nCount`).
+ - **μ** is the mean of that QC metric across all samples in your tab data frame (e.g., `mean(mean_nCoun)`).
+ - **σ** is the standard deviation of that QC metric across all samples.
+
+This normalization will allow us to compare the performance of each sample on a common scale. A Z-score of ±2 means a sample is two standard deviations above/below the average of all samples, we will use this SD theshold to consider a sample to be an outlier.
 
 ```{r}
-outs_all <- qc_summary %>%
-  mutate(
-    z_nCount = (mean_nCount - mean(mean_nCount)) / sd(mean_nCount),
-    z_nFeature = (mean_nFeature - mean(mean_nFeature)) / sd(mean_nFeature),
-    z_mito = (mean_percent_mito - mean(mean_percent_mito)) / sd(mean_percent_mito),
-    z_ribo = (mean_percent_ribo - mean(mean_percent_ribo)) / sd(mean_percent_ribo),
-    z_SCoV2 = (mean_percent_SCoV2 - mean(mean_percent_SCoV2)) / sd(mean_percent_SCoV2),
-    
-    dev_nCount = mean_nCount - mean(mean_nCount),
-    dev_nFeature = mean_nFeature - mean(mean_nFeature),
-    dev_mito = mean_percent_mito - mean(mean_percent_mito),
-    dev_ribo = mean_percent_ribo - mean(mean_percent_ribo),
-    dev_SCoV2 = mean_percent_SCoV2 - mean(mean_percent_SCoV2),
-    
-    low_umi = z_nCount < -2,
-    high_umi = z_nCount > 2,
-    low_genes = z_nFeature < -2,
-    high_genes = z_nFeature > 2,
-    high_mito = z_mito > 2,
-    high_ribo = z_ribo > 2,
-    high_SCoV2 = z_SCoV2 > 2,
-    
-    is_outlier = low_umi | high_umi | low_genes | high_genes | high_mito | high_ribo | high_SCoV2
-  )
+outs_all <- tab %>%
+  mutate(across(
+    c(mean_nCount, mean_nFeature, mean_percent_mito, mean_percent_ribo, mean_percent_SCoV2),
+    ~ (. - mean(.)) / sd(.),
+    .names = "z_{.col}")) %>%
+  rename_with(~ str_remove(., "mean_"), starts_with("z_mean_")) %>%
+  mutate(low_umi = z_nCount < -2, high_umi = z_nCount > 2,
+         low_genes = z_nFeature < -2, high_genes = z_nFeature > 2,
+         high_mito = z_percent_mito > 2, high_ribo = z_percent_ribo > 2, high_SCoV2 = z_percent_SCoV2 > 2,
+         is_outlier = low_umi | high_umi | low_genes | high_genes | high_mito | high_ribo | high_SCoV2)
 
 outs_all %>%
   dplyr::select(cond_tissue, where(is.logical) & where(~any(., na.rm = TRUE))) %>%
   filter(is_outlier)
 ```
 
-If we take a look at the outliers metrics, we see that `acute_case_3-lung` is labelled as outlier as SCoV2 percentage is high, this could be expected as samples in acute stage should haev the larger count of COVID-19 infection so we don't need to worry about it. Regarding `control_case_2-lymph-node` sample, it is true that it have the larger % Ribo value but it is not so concerning, we should worry more about `prolonged_case_4-lymph-node` high mitochondrial content. 
+If we take a look at the outliers z-scores in Figure \@ref(fig:hm), we see that `acute_case_3-lung` is labelled as outlier due to high SCoV2 percentage, this could be expected as samples in acute stage should have the larger count of COVID-19 infection so we don't need to worry about it. Regarding `control_case_2-lymph-node` sample, it has the larger % Ribo value. We should worry the most about `prolonged_case_4-lymph-node` high mitochondrial content as it is `r round(outs_all$z_percent_mito[outs_all$cond_tissue == "prolonged_case_4-lymph-node"])` SD above the average of all samples. 
 
-```{r}
+```{r hm, fig.cap="Heatmap showing z-scores of QC metrics of interest per sample."}
 z_mat <- outs_all %>%
-  dplyr::select(cond_tissue, z_nCount, z_nFeature, z_mito, z_ribo, z_SCoV2) %>%
+  dplyr::select(cond_tissue, z_nCount, z_nFeature, z_percent_mito, z_percent_ribo, z_percent_SCoV2) %>%
   column_to_rownames("cond_tissue") %>%
   as.matrix()
 
@@ -409,176 +387,85 @@ Heatmap(t(z_mat),
         cluster_columns = TRUE)
 ```
 
-As we can notice el q te mes %mito tambe es el que es desvia mes per sota en counts !!!!!!!!
+```{r bp, fig.height=4, fig.width=8, fig.cap="Boxplots showing the distribution of percentage of mitochondrial, ribosomal and SARS-CoV-2 genes for all spots. Pink diamonds indicate mean values for outlier samples, with pink points showing spots from outlier samples overlaid on the overall distribution (green boxplots)."}
+plt <- function(y_var, y_label, highlight_sample) {
+  out_ids <- outs_all %>% filter(is_outlier) %>% pull(cond_tissue)
+  dat <- se@meta.data %>%
+    mutate(out_sample = cond_tissue %in% out_ids)
+  mean_val <- dat %>% 
+    filter(cond_tissue == highlight_sample) %>% 
+    pull(.data[[y_var]]) %>% 
+    mean()
+  
+  ggplot(dat, aes(x = "", y = .data[[y_var]])) +
+    geom_boxplot(outlier.shape = NA, fill = "#b5cf6b", color = "#819e33", alpha = 0.5) +
+    theme_classic() +
+    theme(axis.text.x = element_blank()) +
+    geom_jitter(data = dat %>% filter(out_sample & cond_tissue == highlight_sample),
+                color = "#de9bd1", alpha = 0.3, width = 0.3, size = 0.5) +
+    stat_summary(data = dat %>% filter(cond_tissue == highlight_sample),
+                 fun = mean, geom = "point", shape = 23, size = 3, fill = "#ce6dbd", color = "#ce6dbd") +
+    annotate("text", x = 1, y = mean_val + 2, 
+             label = paste0(highlight_sample, " = ", round(mean_val, digits = 2)), 
+             hjust = 0.5, vjust = -0.5, size = 3, color = "#581d4d") +
+    labs(y = y_label, x = "")
+}
 
-```{r, fig.height=10}
-long <- outs_all %>%
-  dplyr::select(cond_tissue, disease_group, is_outlier,
-         dev_nCount, dev_nFeature, dev_mito, dev_ribo, dev_SCoV2) %>%
-  tidyr::pivot_longer(cols = starts_with("dev_"),
-                      names_to = "metric",
-                      values_to = "deviation") %>%
-  mutate(metric = factor(metric,
-                        levels = c("dev_nCount", "dev_nFeature", "dev_mito", "dev_ribo", "dev_SCoV2"),
-                        labels = c("UMI Count", "Gene Count", "% Mito", "% Ribo", "% SCoV2")))
+p1 <- plt("percent.mito", "% Mitochondrial", "prolonged_case_4-lymph-node")
+p2 <- plt("percent.ribo", "% Ribosomal", "control_case_2-lymph-node")
+p3 <- plt("percent.SCoV2", "% SARS-CoV-2", "acute_case_3-lung")
+(p1 | p2 | p3)
+```
 
-ggplot(long, aes(x = reorder(cond_tissue, deviation), 
-                 y = deviation, 
-                 fill = is_outlier)) +
-  geom_bar(stat = "identity") +
-  geom_hline(yintercept = 0, linetype = "dashed") +
-  facet_wrap(~metric, scales = "free_y", ncol = 1) +
-  scale_fill_manual(values = c("FALSE" = "#b5cf6b", "TRUE" = "#ce6dbd"),
-                    name = "Outlier") +
-  theme_bw() +
-  theme(
-    axis.text.x = element_text(angle = 90, hjust = 1, size = 8),
-    axis.text.x.top = element_blank(),
-    strip.text = element_text(face = "bold"),
-    panel.spacing = unit(0.5, "lines")
+The Figure \@ref(fig:featribo) shows that the high content ribosomal areas from `control_case_2-lymph-node` are not randomly scattered but clustered in distinct, localized regions. The data suggests that the tissue section contains regions with high metabolic and proliferative activity, which is consistent with the biology of structures like follicles. High ribosomal percentages in these active regions are a biological signal, not a technical QC concern.
+
+```{r featribo, fig.cap="Spatial feature plots showing the percentage of ribosomal expression per spot across Control case 2 from lymph node."}
+SpatialFeaturePlot(
+    object = se[, se$cond_tissue == "control_case_2-lymph-node"],
+    features = "percent.ribo",
+    pt.size.factor = 1000
   ) +
-  labs(x = "Sample", y = "Deviation from Mean") +
-  NoLegend()
+    scale_fill_viridis_c(option = "magma") +
+    theme(plot.title = element_text(hjust = 0.5, size = 12))
 ```
 
-```{r, fig.height=4}
-qc_boxplot_data <- outs_all %>%
-  dplyr::select(cond_tissue, disease_group, is_outlier,
-         mean_nCount, mean_nFeature, mean_percent_mito, 
-         mean_percent_ribo, mean_percent_SCoV2,
-         low_umi, high_umi, low_genes, high_genes, 
-         high_mito, high_ribo, high_SCoV2)
+Regarding mitochondrial expression, as we see in Figures \@ref(fig:bp) and \@ref(fig:featmito) the vast majority of the tissue area from `prolonged_case_4-lymph-node` shows a lot of spots with mitochondrial expression over ~15%. Moreover, if we plot the number of features and counts of the `prolonged_case_4` sample we see that mitochondrial expression is really indicating low quality of spots.
 
-# Box plot for mitochondrial %
-p_box3 <- ggplot(qc_boxplot_data, aes(x = "All Samples", y = mean_percent_mito)) +
-  geom_boxplot(outlier.shape = NA, fill = "lightblue", alpha = 0.5) +
-  geom_jitter(aes(color = is_outlier, size = is_outlier), width = 0.2, alpha = 0.7) +
-  scale_color_manual(values = c("FALSE" = "gray50", "TRUE" = "red"),
-                     name = "Outlier") +
-  scale_size_manual(values = c("FALSE" = 2, "TRUE" = 4)) +
-  theme_classic() +
-  labs(y = "Mean % Mitochondrial", x = "") +
-  theme(axis.text.x = element_blank()) +
-  NoLegend()
+```{r featmito, fig.width=12, fig.cap="Spatial feature plots showing the number of features and counts per spot across Prolonged case 2 from lymph node."}
+p1 <- lapply(c("prolonged_case_4-lymph-node"), function(cond_tissue) {
+  sub <- se[, se$cond_tissue == cond_tissue & se$percent.mito < 30]
 
-# Box plot for ribosomal %
-p_box4 <- ggplot(qc_boxplot_data, aes(x = "All Samples", y = mean_percent_ribo)) +
-  geom_boxplot(outlier.shape = NA, fill = "lightblue", alpha = 0.5) +
-  geom_jitter(aes(color = is_outlier, size = is_outlier), width = 0.2, alpha = 0.7) +
-  scale_color_manual(values = c("FALSE" = "gray50", "TRUE" = "red"),
-                     name = "Outlier") +
-  scale_size_manual(values = c("FALSE" = 2, "TRUE" = 4)) +
-  theme_classic() +
-  labs(y = "Mean % Ribosomal", x = "") +
-  theme(axis.text.x = element_blank()) +
-  NoLegend()
-
-# Box plot for SARS-CoV-2 %
-p_box5 <- ggplot(qc_boxplot_data, aes(x = "All Samples", y = mean_percent_SCoV2)) +
-  geom_boxplot(outlier.shape = NA, fill = "lightblue", alpha = 0.5) +
-  geom_jitter(aes(color = is_outlier, size = is_outlier), width = 0.2, alpha = 0.7) +
-  scale_color_manual(values = c("FALSE" = "gray50", "TRUE" = "red"),
-                     name = "Outlier") +
-  scale_size_manual(values = c("FALSE" = 2, "TRUE" = 4)) +
-  theme_classic() +
-  labs(y = "Mean % SARS-CoV-2", x = "") +
-  theme(axis.text.x = element_blank()) +
-  NoLegend()
-
-# Combine box plots
-(p_box3 | p_box4 | p_box5)
+  SpatialFeaturePlot(object = sub[, sub$cond_tissue == cond_tissue],
+                     features = "percent.mito",
+                     pt.size.factor = 1000) +
+    scale_fill_viridis_c(option = "magma")
+    
+})[[1]] 
+p2 <- SpatialFeaturePlot(object = se[, se$cond_tissue == "prolonged_case_4-lymph-node"],
+                     features = "nFeature_Spatial",
+                     pt.size.factor = 1000) +
+    scale_fill_viridis_c(option = "magma")
+p3 <- SpatialFeaturePlot(object = se[, se$cond_tissue == "prolonged_case_4-lymph-node"],
+                     features = "nCount_Spatial",
+                     pt.size.factor = 1000) +
+    scale_fill_viridis_c(option = "magma")
+(p1 | p2 | p3)
 ```
 
-```{r, fig.height=4}
-outlier_sample_ids <- outs_all %>% filter(is_outlier) %>% pull(cond_tissue)
+If we take a look at the LN integrated data we see that `prolonged_case_4` is problematic as almost all its spots are clustered together.
 
-# Create a new column in metadata indicating if spot belongs to outlier sample
-spot_data <- se@meta.data %>%
-  mutate(from_outlier_sample = cond_tissue %in% outlier_sample_ids)
-
-# Box plot for mitochondrial % - all spots
-p_spots3 <- ggplot(spot_data_plot, aes(x = "All Spots", y = percent.mito)) +
-  geom_boxplot(outlier.shape = NA, fill = "lightblue", alpha = 0.5) +
-  geom_jitter(data = spot_data_plot %>% filter(from_outlier_sample & cond_tissue == "prolonged_case_4-lymph-node"),
-              color = "red", alpha = 0.3, width = 0.3, size = 0.5) +
-  theme_classic() +
-  theme(axis.text.x = element_blank()) +
-  labs(y = "% Mitochondrial", x = "")
-
-# Box plot for ribosomal % - all spots
-p_spots4 <- ggplot(spot_data_plot, aes(x = "All Spots", y = percent.ribo)) +
-  geom_boxplot(outlier.shape = NA, fill = "lightblue", alpha = 0.5) +
-  geom_jitter(data = spot_data_plot %>% filter(from_outlier_sample & cond_tissue == "control_case_2-lymph-node"),
-              color = "red", alpha = 0.3, width = 0.3, size = 0.5) +
-  theme_classic() +
-  theme(axis.text.x = element_blank()) +
-  labs(y = "% Ribosomal", x = "")
-
-# Box plot for SARS-CoV-2 % - all spots
-p_spots5 <- ggplot(spot_data_plot, aes(x = "All Spots", y = percent.SCoV2)) +
-  geom_boxplot(outlier.shape = NA, fill = "lightblue", alpha = 0.5) +
-  geom_jitter(data = spot_data_plot %>% filter(from_outlier_sample & cond_tissue == "acute_case_3-lung"),
-              color = "red", alpha = 0.3, width = 0.3, size = 0.5) +
-  theme_classic() +
-  theme(axis.text.x = element_blank()) +
-  labs(y = "% SARS-CoV-2", x = "")
-
-# Combine spot-level box plots
-(p_spots3 | p_spots4 | p_spots5)
+```{r, fig.heigth=4, fig.width=18, fig.cap="UMAPs showing the mitochondrial percentage, the study ID and the annotation for LN samples."}
+rm(list = setdiff(ls(), "st_dt"))
+se_ln <- "{st_dt}/se_annot_lymph-node.rds" %>%
+    glue::glue() %>%
+    here::here() %>%
+  readRDS(file = .)
+se_ln <- UpdateSeuratObject(se_ln)
+p1 <- FeaturePlot(se_ln, features = "percent.mito")
+p2 <- DimPlot(object = se_ln, reduction = "umap", group.by = c("study_id",
+    "annot"), pt.size = 0.1)
+(p1 | p2) + plot_layout(widths = c(1, 2))
 ```
-
-```{r}
-```
-
-```{r}
-```
-
-```{r}
-```
-
-```{r}
-```
-
-```{r}
-```
-
-```{r}
-```
-
-```{r}
-```
-
-```{r}
-```
-
-```{r}
-```
-
-```{r}
-```
-
-```{r}
-```
-
-```{r}
-```
-
-```{r}
-```
-
-
-```{r}
-```
-
-```{r}
-```
-
-```{r}
-```
-
-```{r}
-```
-
 
 # Session Information
 

@@ -1,0 +1,199 @@
+---
+title: "Deconvolution 0 - Seurat data conversion to SummarizedExperiment classes"
+author: "Clàudia Vicente"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  bookdown::html_document2:
+    theme: cosmo
+    highlight: pygments
+    number_sections: true
+    global_numbering: true  
+    toc: true
+    toc_depth: 3
+    toc_float: true
+    df_print: paged
+editor_options: 
+  markdown: 
+    wrap: sentence
+  chunk_output_type: inline
+---
+ 
+# Introduction
+
+Here the snRNA-seq and visium data objects are converted to `SingleCellExperiment` and `SpatialExperiment`, that will be used as input for deconvolution with `SPOTlight`.
+
+```{r setup, include=FALSE}
+set.seed(123)
+source(here::here("misc/paths.R"))
+
+knitr::knit_hooks$set(
+  memory = function(before, options, envir) {
+    if (!before) {
+      gc(verbose = FALSE)
+    }
+  }
+)
+knitr::opts_chunk$set(memory = TRUE, echo = TRUE, message = FALSE, warning = FALSE, tidy = TRUE, tidy.opts = list(width.cutoff = 60),
+                      dev="svg",  out.width = "100%", fig.align = 'center',
+                      
+                      fig.path = here::here(paste0("{st_plots}" %>%
+                                                     glue::glue() %>%
+                                                     here::here(),
+                                                   tools::file_path_sans_ext(basename(rstudioapi::getSourceEditorContext()$path)),
+                                                   "_files/")
+                                            )
+                      )
+options(width = 1200)
+```
+
+```{r, eval = FALSE, include = FALSE}
+rmarkdown::render(
+  "0-seurat_conversion.Rmd",
+  output_format = NULL,
+  output_dir = "{st_html}" %>%
+                        glue::glue() %>%
+                        here::here()
+)
+```
+
+# Libraries
+
+```{r}
+library(Seurat)
+library(SingleCellExperiment)
+library(SpatialExperiment)
+```
+
+# snRNA-seq
+
+## Load data
+
+```{r}
+sc <- "{sn_dt}/se_annot_consolidated.rds" %>%
+    glue::glue() %>%
+    here::here() %>%
+    readRDS(.)
+sc
+```
+
+## Conversion
+
+```{r}
+DefaultAssay(sc) <- "integrated" # if integrated will be used 
+sce <- as.SingleCellExperiment(sc)
+sce
+# or 
+# assay(sce, "integrated") <- assay(altExp(sce, "integrated"), "logcounts")
+# to have all assays at the same level.
+```
+
+# Visium
+
+## Load data
+
+```{r}
+st <- "{st_dt}/se_annot_join_lung.rds" %>%
+    glue::glue() %>%
+    here::here() %>%
+  readRDS(file = .)
+st <- UpdateSeuratObject(st)
+```
+
+## Conversion
+
+An object consists of: **(i)** `assays` containing expression counts, **(ii)** `rowData` containing information on features, i.e. genes, **(iii)** `colData` containing information on spots or cells, including nonspatial and spatial metadata, **(iv)** `spatialCoords` containing spatial coordinates, and **(v)** `imgData` containing image data. It can also contain `reducedDims` where reduced dimensions as PCA, UMAP, ... are stored.
+
+```{r}
+as.SpatialExperiment <- function(se) {
+  #do a loop for each sample? may not be necessary
+  
+  #spe <- SpatialExperiment(
+  #  assays = list(counts = assay(sce)),
+  #  rowData = rd, 
+  #  colData = DataFrame(xyz), 
+  #  spatialCoordsNames = c("pxl_col_in_fullres", "pxl_row_in_fullres"),
+  #  imgData = img,
+  #  sample_id = "foo")
+  
+  # matrix for the assays
+  # DataFrame for coldata
+}
+```
+
+spatialCoords can be supplied via colData by specifying the column names that correspond to spatial coordinates with spatialCoordsNames
+(spatialCoordsNames = c("x", "y"))
+
+Alternatively, spatialCoords may be supplied separately as a matrix 
+(spatialCoords = xy)
+
+EXAMPLE FUNC
+```{r}
+library(SpatialExperiment)
+library(Seurat)
+library(SeuratData)
+# BiocManager::iBiocManager::install("SpatialExperiment")nstall("SpatialExperiment")
+library(dplyr)
+
+# SeuratData::InstallData(ds = "stxBrain")
+SeuratData::LoadData(ds = "tonsilref")
+se1 <- SeuratData::LoadData(ds = "stxBrain", type = "posterior1")
+se2 <- SeuratData::LoadData(ds = "stxBrain", type = "anterior1")
+
+## Function
+seurat_to_spe <- function(seu, sample_id, img_id) {
+    ## Convert to SCE
+    sce <- Seurat::as.SingleCellExperiment(seu)
+    
+    ## Extract spatial coordinates
+    spatialCoords <- as.matrix(
+        seu@images[[img_id]]@coordinates[, c("imagecol", "imagerow")])
+    
+    ## Extract and process image data
+    img <- SpatialExperiment::SpatialImage(
+        x = as.raster(seu@images[[img_id]]@image))
+    
+    imgData <- DataFrame(
+        sample_id = sample_id,
+        image_id = img_id,
+        data = I(list(img)),
+        scaleFactor = seu@images[[img_id]]@scale.factors$lowres)
+    
+    # Convert to SpatialExperiment
+    spe <- SpatialExperiment(
+        assays = assays(sce),
+        rowData = rowData(sce),
+        colData = colData(sce),
+        metadata = metadata(sce),
+        reducedDims = reducedDims(sce),
+        altExps = altExps(sce),
+        sample_id = sample_id,
+        spatialCoords = spatialCoords,
+        imgData = imgData
+    )
+    # indicate all spots are on the tissue
+    spe$in_tissue <- 1
+    spe$sample_id <- sample_id
+    # Return Spatial Experiment object
+    spe
+}
+
+se_ls <- list("posterior1" = se1, "anterior1" = se2)
+spe_ls <- lapply(names(se_ls), function(i) {
+    seurat_to_spatialexperiment(seu = se_ls[[i]], sample_id = i, img_id = i)
+})
+
+spe <- Reduce(cbind, spe_ls)
+spe
+```
+
+
+# Save data
+
+```{r, eval=FALSE}
+```
+
+# Session Information
+
+```{r}
+sessionInfo()
+```
