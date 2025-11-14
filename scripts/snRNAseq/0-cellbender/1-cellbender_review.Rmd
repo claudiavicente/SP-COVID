@@ -1,0 +1,304 @@
+---
+title: "CellBender 1 - Review of CellBender output"
+author: "Clàudia Vicente"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  bookdown::html_document2:
+    theme: cosmo
+    highlight: pygments
+    number_sections: true
+    global_numbering: true  
+    toc: true
+    toc_depth: 3
+    toc_float: true
+    df_print: paged
+editor_options: 
+  markdown: 
+    wrap: sentence
+  chunk_output_type: inline
+---
+
+# Introduction
+
+Here the results obtained from running CellBender on the snRNA-seq raw dataset are analysed.
+
+```{r setup, include=FALSE}
+set.seed(123)
+source(here::here("misc/paths.R"))
+
+knitr::knit_hooks$set(
+  memory = function(before, options, envir) {
+    if (!before) {
+      gc(verbose = FALSE)
+    }
+  }
+)
+knitr::opts_chunk$set(memory = TRUE, echo = TRUE, message = FALSE, warning = FALSE, tidy = TRUE, tidy.opts = list(width.cutoff = 60),
+                      dev="svg",  out.width = "100%", fig.align = 'center',
+                      
+                      fig.path = here::here(paste0("{st_plots}" %>%
+                                                     glue::glue() %>%
+                                                     here::here(),
+                                                   tools::file_path_sans_ext(basename(rstudioapi::getSourceEditorContext()$path)),
+                                                   "_files/")
+                                            )
+                      )
+options(width = 1200)
+```
+
+```{r, eval = FALSE, include = FALSE}
+rmarkdown::render(
+  "1-cellbender_review.Rmd",
+  output_format = NULL,
+  output_dir = "{st_html}" %>%
+                        glue::glue() %>%
+                        here::here()
+)
+```
+
+# Libraries
+
+```{r}
+library(ggplot2)
+library(patchwork) 
+library(scCustomize)
+library(Seurat)
+library(SingleCellExperiment)
+```
+
+# Metrics summary
+
+## Load data
+
+```{r}
+fn <- "{sn_odt}/0-cellbender" %>%
+    glue::glue() %>%
+    here::here() %>%
+    list.files(path = ., full.names = TRUE) %>%
+  list.files(path = ., full.names = TRUE, pattern = glue("metrics"))
+
+metrics_ls <- lapply(fn, function(i) {
+    tab <- read.table(file = i, sep = ",", col.names = c("metric", "value"))
+    
+    name <- basename(i)
+    parts <- sub("^GSM[0-9]+_(.+)_raw_metrics\\.csv$", "\\1", name)
+    split <- strsplit(parts, "-")[[1]]
+    tab$id <- split[1]
+    
+    c_parts <- split[-1]
+    c_parts <- c_parts[!grepl("^R[0-9]+$", c_parts)]
+    tab$condition <- paste(c_parts, collapse = "-")
+    
+    return(tab)
+})
+
+metrics <- list_rbind(metrics_ls) %>%
+  pivot_wider(names_from = metric, values_from = value) %>%
+  arrange(condition, id)
+metrics
+```
+## Metrics inspection
+
+Summary statistics by condition
+
+```{r}
+metrics %>%
+  group_by(condition) %>%
+  summarise(
+    n_samples = n(),
+    mean_cells_found = mean(found_cells, na.rm = TRUE),
+    mean_pct_removed = mean(fraction_counts_removed * 100, na.rm = TRUE),
+    mean_counts_per_cell = mean(output_average_counts_per_cell, na.rm = TRUE),
+    mean_convergence = mean(convergence_indicator, na.rm = TRUE),
+    .groups = "drop"
+  )
+```
+
+Total counts overview (raw, output, removed)
+ 
+```{r}
+palette <- setNames(c("#4AE38A", "#168D48","#1F78B4", "#0D542B")
+                   [1:length(unique(metrics$condition[metrics$condition != ""]))],
+                   unique(metrics$condition[metrics$condition != ""]))
+
+metrics %>%
+  select(id, condition, total_raw_counts, total_output_counts, total_counts_removed) %>%
+  pivot_longer(cols = c(total_raw_counts, total_output_counts, total_counts_removed),
+               names_to = "metric", values_to = "value") %>%
+  mutate(metric = factor(metric, levels = c("total_raw_counts", "total_output_counts", "total_counts_removed"))) %>%
+  ggplot(aes(x = id, y = value, fill = condition)) +
+  geom_col() +
+  facet_wrap(~metric,  ncol = 1) + #scales = "free_y",
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "bottom") +
+  scale_y_continuous(labels = scales::comma) +
+  scale_fill_manual(values = palette) +
+
+  labs(title = "Total Counts Metrics", x = "Sample ID", y = "Counts")
+```
+
+proportion metrics
+
+```{r}
+metrics %>%
+  select(id, condition, fraction_counts_removed, 
+         fraction_of_analyzed_droplets_that_are_nonempty) %>%
+  pivot_longer(cols = -c(id, condition), names_to = "metric", values_to = "value") %>%
+  ggplot(aes(x = id, y = value, fill = condition)) +
+  geom_col() +
+  facet_wrap(~metric, scales = "free_y", ncol = 1) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "bottom") +
+  scale_fill_manual(values = palette) +
+
+  labs(title = "Fraction Metrics", x = "Sample ID", y = "Fraction")
+```
+
+Cell detection (expected, found, empties)
+
+```{r}
+metrics %>%
+  select(id, condition, expected_cells, found_cells, found_empties) %>%
+  pivot_longer(cols = c(expected_cells, found_cells, found_empties),
+               names_to = "metric", values_to = "value") %>%
+  ggplot(aes(x = id, y = value, fill = metric)) +
+  geom_col(position = "dodge") +
+  facet_wrap(~condition, scales = "free_x") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "bottom") +
+  scale_y_continuous(labels = scales::comma) +
+  labs(title = "Cell Detection: Expected vs Found vs Empties",
+       x = "Sample ID", y = "Number of Droplets")
+```
+
+counts per cell 
+
+```{r}
+metrics %>%
+  select(id, condition, output_average_counts_per_cell, average_counts_removed_per_cell,
+         total_raw_counts_in_cells, total_counts_removed_from_cells) %>%
+  pivot_longer(cols = -c(id, condition), names_to = "metric", values_to = "value") %>%
+  ggplot(aes(x = id, y = value, fill = condition)) +
+  geom_col() +
+  facet_wrap(~metric, scales = "free_y", ncol = 2) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "bottom") +
+  scale_y_continuous(labels = scales::comma) +
+  scale_fill_manual(values = palette) +
+  labs(title = "Per-Cell Count Metrics", x = "Sample ID", y = "Value")
+```
+
+Quality/convergence metrics
+
+```{r}
+ metrics %>%
+  select(id, condition, convergence_indicator, overall_change_in_train_elbo, 
+         ratio_of_found_cells_to_expected_cells) %>%
+  pivot_longer(cols = -c(id, condition), names_to = "metric", values_to = "value") %>%
+  ggplot(aes(x = id, y = value, fill = condition)) +
+  geom_col() +
+  facet_wrap(~metric, scales = "free_y") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "bottom") +
+  scale_fill_manual(values = palette) +
+  labs(title = "Quality and Convergence Metrics", x = "Sample ID", y = "Value")
+```
+
+# Data comparison
+
+## Load data
+
+```{r}
+fn <- "{sn_dt}" %>%
+    glue::glue() %>%
+    here::here() %>%
+  list.files(path = ., full.names = TRUE, pattern = glue("h5"))
+
+
+sample_names 
+
+# Read all files
+mat_ls <- lapply(seq_along(fn), function(i) {
+  Read_CellBender_h5_Mat(file_name = h5_files[i])
+})
+
+names(mat_ls) <- sample_names
+
+mat_merged <- Merge_Sparse_Data_All(matrix_list = mat_ls, add_cell_ids = names(mat_ls))
+sce <- SingleCellExperiment(assays = list(counts = mat_merged))
+sce
+
+
+sce_ls <- lapply(fn, function(i) {
+    tab <- Read10X_h5(i)
+    sce <- SingleCellExperiment(assays = list(counts = as.matrix(tab)))
+    
+    return(sce)
+})
+
+
+h5_files <- list.files(path = here(glue("{sn_odt}/0-cellbender")),
+                       pattern = "_raw_filtered\\.h5$",
+                       recursive = TRUE, full.names = TRUE)
+sample_names <- basename(dirname(h5_files))
+
+# Read all files
+mat_ls <- lapply(seq_along(h5_files), function(i) {
+  Read_CellBender_h5_Mat(file_name = h5_files[i])
+})
+
+names(mat_ls) <- sample_names
+
+mat_merged <- Merge_Sparse_Data_All(matrix_list = mat_ls, add_cell_ids = names(mat_ls))
+sce <- SingleCellExperiment(assays = list(counts = mat_merged))
+sce
+
+# add metadata: donor, condition, nCount_RNA ?, nFeature_RNA ?. and:
+#
+sobj[['pct.mito']] <- PercentageFeatureSet(sobj, pattern='^MT-')
+sobj[['pct.ribo']] <- PercentageFeatureSet(sobj, pattern='^RP[SL][0-9]*$')
+sobj[['pct.MALAT1']] <- PercentageFeatureSet(sobj, pattern='^MALAT1$')
+sobj[['pct.SCoV2']] <- PercentageFeatureSet(sobj, pattern='^SCoV2-')
+```
+
+class: SingleCellExperiment 
+dim: 60675 86841 
+metadata(0):
+assays(1): counts
+rownames(60675): DDX11L1 WASH7P ... SCoV2_ORF10 SCoV2_UTR3
+rowData names(0):
+colnames(86841): 17B_GAGGGTATCGATCCCT-1 17B_TCCTTTCGTTGGACCC-1 ... T188_TCGTGCTGTACTGGGA-1 T188_ATTTCACTCTCGTGGG-1
+colData names(0):
+reducedDimNames(0):
+mainExpName: NULL
+
+```{r}
+```
+
+```{r}
+```
+
+```{r}
+```
+
+```{r}
+```
+
+```{r}
+```
+
+
+
+
+
+
+
+
+
+
+

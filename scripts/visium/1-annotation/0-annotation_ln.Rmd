@@ -48,7 +48,7 @@ options(width = 1200)
 
 ```{r, eval = FALSE, include = FALSE}
 rmarkdown::render(
-  "0-annotation-ln.Rmd",
+  "0-annotation_ln.Rmd",
   output_format = NULL,
   output_dir = "{st_html}" %>%
                         glue::glue() %>%
@@ -413,11 +413,11 @@ Regarding `Unknown-3` and `-4`, we can be pretty sure about the previous interpr
 annotation_dir <- glue("{st_odt}/1-annotation") %>% here::here()
 dir.create(annotation_dir, recursive = TRUE, showWarnings = FALSE)
 
-glue("{annotation_dir}/0-annotation-ln_mgs.rds") %>%
+glue("{annotation_dir}/0-annotation_ln-mgs.rds") %>%
   saveRDS(object = markers, file = .)
-glue("{annotation_dir}/0-annotation-ln_goBP_2-4.rds") %>%
+glue("{annotation_dir}/0-annotation_ln-goBP_2-4.rds") %>%
   saveRDS(object = go_results, file = .)
-glue("{annotation_dir}/0-annotation-ln_goBP_uall.rds") %>%
+glue("{annotation_dir}/0-annotation_ln-goBP_uall.rds") %>%
   saveRDS(object = go_results_all, file = .)
 ```
 

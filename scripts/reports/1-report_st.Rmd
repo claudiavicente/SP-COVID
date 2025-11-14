@@ -48,7 +48,7 @@ options(width = 1200)
 
 ```{r, eval = FALSE, include = FALSE}
 rmarkdown::render(
-  "1-report-st.Rmd",
+  "1-report_st.Rmd",
   output_format = NULL,
   output_dir = "{rep_html}" %>%
                         glue::glue() %>%

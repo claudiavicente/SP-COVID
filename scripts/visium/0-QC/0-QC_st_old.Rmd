@@ -48,7 +48,7 @@ options(width = 1200)
 
 ```{r, eval = FALSE, include = FALSE}
 rmarkdown::render(
-  "0-QC-st.Rmd",
+  "0-QC_st.Rmd",
   output_format = NULL,
   output_dir = "{st_html}" %>%
                         glue::glue() %>%
@@ -454,7 +454,7 @@ p3 <- SpatialFeaturePlot(object = se[, se$cond_tissue == "prolonged_case_4-lymph
 
 If we take a look at the LN integrated data we see that `prolonged_case_4` is problematic as almost all its spots are clustered together.
 
-```{r, fig.heigth=4, fig.width=18, fig.cap="UMAPs showing the mitochondrial percentage, the study ID and the annotation for LN samples."}
+```{r umaps, fig.heigth=4, fig.width=18, fig.cap="UMAPs showing the mitochondrial percentage, the study ID and the annotation for LN samples."}
 rm(list = setdiff(ls(), "st_dt"))
 se_ln <- "{st_dt}/se_annot_lymph-node.rds" %>%
     glue::glue() %>%

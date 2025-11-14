@@ -79,12 +79,17 @@ sc
 ## Conversion
 
 ```{r}
-DefaultAssay(sc) <- "integrated" # if integrated will be used 
+# if integrated will be used 
+
+DefaultAssay(sc) <- "integrated"
 sce <- as.SingleCellExperiment(sc)
 sce
-# or 
+
+# or to have all assays at the same level.
+
+# sce <- as.SingleCellExperiment(sc)
 # assay(sce, "integrated") <- assay(altExp(sce, "integrated"), "logcounts")
-# to have all assays at the same level.
+# sce
 ```
 
 # Visium
@@ -97,6 +102,7 @@ st <- "{st_dt}/se_annot_join_lung.rds" %>%
     here::here() %>%
   readRDS(file = .)
 st <- UpdateSeuratObject(st)
+st
 ```
 
 ## Conversion
@@ -104,61 +110,24 @@ st <- UpdateSeuratObject(st)
 An object consists of: **(i)** `assays` containing expression counts, **(ii)** `rowData` containing information on features, i.e. genes, **(iii)** `colData` containing information on spots or cells, including nonspatial and spatial metadata, **(iv)** `spatialCoords` containing spatial coordinates, and **(v)** `imgData` containing image data. It can also contain `reducedDims` where reduced dimensions as PCA, UMAP, ... are stored.
 
 ```{r}
-as.SpatialExperiment <- function(se) {
-  #do a loop for each sample? may not be necessary
-  
-  #spe <- SpatialExperiment(
-  #  assays = list(counts = assay(sce)),
-  #  rowData = rd, 
-  #  colData = DataFrame(xyz), 
-  #  spatialCoordsNames = c("pxl_col_in_fullres", "pxl_row_in_fullres"),
-  #  imgData = img,
-  #  sample_id = "foo")
-  
-  # matrix for the assays
-  # DataFrame for coldata
-}
-```
-
-spatialCoords can be supplied via colData by specifying the column names that correspond to spatial coordinates with spatialCoordsNames
-(spatialCoordsNames = c("x", "y"))
-
-Alternatively, spatialCoords may be supplied separately as a matrix 
-(spatialCoords = xy)
-
-EXAMPLE FUNC
-```{r}
-library(SpatialExperiment)
-library(Seurat)
-library(SeuratData)
-# BiocManager::iBiocManager::install("SpatialExperiment")nstall("SpatialExperiment")
-library(dplyr)
-
-# SeuratData::InstallData(ds = "stxBrain")
-SeuratData::LoadData(ds = "tonsilref")
-se1 <- SeuratData::LoadData(ds = "stxBrain", type = "posterior1")
-se2 <- SeuratData::LoadData(ds = "stxBrain", type = "anterior1")
-
-## Function
-seurat_to_spe <- function(seu, sample_id, img_id) {
-    ## Convert to SCE
-    sce <- Seurat::as.SingleCellExperiment(seu)
+as.SpatialExperiment <- function(seu, sample_id, img_id) {
+    sce <- as.SingleCellExperiment(seu) ## Convert to SCE
     
     ## Extract spatial coordinates
-    spatialCoords <- as.matrix(
+    spatialCoords <- as.matrix( 
         seu@images[[img_id]]@coordinates[, c("imagecol", "imagerow")])
     
     ## Extract and process image data
-    img <- SpatialExperiment::SpatialImage(
+    img <- SpatialExperiment::SpatialImage( 
         x = as.raster(seu@images[[img_id]]@image))
-    
+
     imgData <- DataFrame(
         sample_id = sample_id,
         image_id = img_id,
         data = I(list(img)),
         scaleFactor = seu@images[[img_id]]@scale.factors$lowres)
     
-    # Convert to SpatialExperiment
+    ## Convert to SpatialExperiment
     spe <- SpatialExperiment(
         assays = assays(sce),
         rowData = rowData(sce),
@@ -170,22 +139,37 @@ seurat_to_spe <- function(seu, sample_id, img_id) {
         spatialCoords = spatialCoords,
         imgData = imgData
     )
-    # indicate all spots are on the tissue
-    spe$in_tissue <- 1
-    spe$sample_id <- sample_id
-    # Return Spatial Experiment object
+    spe$in_tissue <- 1 # indicate all spots are on the tissue
+    spe$sample_id <- sample_id # Return Spatial Experiment object
     spe
 }
 
-se_ls <- list("posterior1" = se1, "anterior1" = se2)
-spe_ls <- lapply(names(se_ls), function(i) {
-    seurat_to_spatialexperiment(seu = se_ls[[i]], sample_id = i, img_id = i)
+sample_ids <- names(st@images) # sample_ids <- gsub("\\.lung$", "", image_names)
+se_ls <- lapply(sample_ids, function(id) {
+    id_spots <- rownames(st@images[[id]]@coordinates)
+    subset(st, cells = id_spots)
 })
+names(se_ls) <- sample_ids
+```
 
+Before we continue, lets make sure that we have splitted the Seurat object correctly.
+
+```{r}
+s_spots <- sapply(names(se_ls), function(sample) {
+    ncol(se_ls[[sample]])
+})
+names(s_spots) <- gsub("\\.lung$", "", names(s_spots))
+s_spots
+table(st$study_id)
+```
+
+```{r}
+spe_ls <- lapply(sample_ids, function(i) {
+    as.SpatialExperiment(seu = se_ls[[i]], sample_id = i, img_id = i)
+})
 spe <- Reduce(cbind, spe_ls)
 spe
 ```
-
 
 # Save data
 

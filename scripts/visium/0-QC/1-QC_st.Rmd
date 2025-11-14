@@ -1,0 +1,531 @@
+---
+title: "Quality Control 0 - Visium QC"
+author: "Clàudia Vicente"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  bookdown::html_document2:
+    theme: cosmo
+    highlight: pygments
+    number_sections: true
+    global_numbering: true  
+    toc: true
+    toc_depth: 3
+    toc_float: true
+    df_print: paged
+editor_options: 
+  markdown: 
+    wrap: sentence
+  chunk_output_type: inline
+---
+
+# Introduction
+
+Here a basic QC analysis of the mapping metrics from Spaceranger 2.0.1 and of of Visium slides is performed.
+
+```{r setup, include=FALSE}
+set.seed(123)
+source(here::here("misc/paths.R"))
+
+knitr::knit_hooks$set(
+  memory = function(before, options, envir) {
+    if (!before) {
+      gc(verbose = FALSE)
+    }
+  }
+)
+knitr::opts_chunk$set(memory = TRUE, echo = TRUE, message = FALSE, warning = FALSE, tidy = TRUE, tidy.opts = list(width.cutoff = 60),
+                      dev="svg",  out.width = "100%", fig.align = 'center',
+                      
+                      fig.path = here::here(paste0("{st_plots}" %>%
+                                                     glue::glue() %>%
+                                                     here::here(),
+                                                   tools::file_path_sans_ext(basename(rstudioapi::getSourceEditorContext()$path)),
+                                                   "_files/")
+                                            )
+                      )
+options(width = 1200)
+```
+
+```{r, eval = FALSE, include = FALSE}
+rmarkdown::render(
+  "1-QC_st.Rmd",
+  output_format = NULL,
+  output_dir = "{st_html}" %>%
+                        glue::glue() %>%
+                        here::here()
+)
+```
+
+# Libraries
+
+```{r}
+library(kableExtra)
+library(ggplot2)
+library(ggrepel)
+library(RColorBrewer)
+library(Seurat)
+library(ComplexHeatmap)
+library(patchwork)
+library(HDF5Array)
+library(SpatialExperiment)
+library(ggspavis)
+library(scuttle)
+```
+
+# Metrics QC
+
+We will start by exploring mapping and sequencing metrics.
+
+## Load data
+
+```{r}
+meta <- load_sample_metadata() 
+ids <- meta %>% 
+  pull(donor_id) %>%                  
+  unique()  
+
+files <- list.files(path = "{st_dt}/QC_metrics/" %>%
+  glue::glue() %>%
+  here::here(), 
+  pattern = "-metrics_summary\\.csv$", full.names = TRUE)
+
+metrics <- lapply(files, function(f) {
+  
+  file_base <- basename(f)
+  base_clean <- str_remove(file_base, "-metrics_summary\\.csv$")
+  
+  parts <- str_split(base_clean, "-", n = 2)[[1]]
+  donor <- parts[1]
+  tissue <- parts[2]  
+  study_id <- meta %>% filter(donor_id == donor) %>% pull(study_id) %>% unique()
+  
+  tmp_df <- read_csv(f, show_col_types = FALSE)
+  tmp_df <- tmp_df %>%
+    dplyr::mutate(
+      study_id = study_id,
+      tissue = tissue
+    ) %>%
+    dplyr::select(-c(`Sample ID`)) %>%
+    dplyr::select(study_id, tissue, everything())
+  
+  return(tmp_df)
+}) %>%
+  bind_rows()
+
+colnames(metrics) <- colnames(metrics) %>%
+  str_replace_all(" ", "_") %>%
+  str_replace_all("\\(|\\)", "")
+
+metrics <- metrics %>%
+  mutate(cond_tissue = glue("{study_id}-{tissue}"))
+```
+
+## Sequencing 
+
+As we can see in Figure \@ref(fig:q30), Q30 bases in percentage are really near to 1 for all samples indicating reliability for base calling.
+
+```{r q30, fig.height=3, fig.width=10, fig.cap="Bar plots showing percentage of Q30 bases per sample."}
+palette <- colorRampPalette(colors = brewer.pal(8, "Paired"))(2)
+names(palette) <- unique(metrics$tissue)
+
+metrics_vec <- c("Q30_Bases_in_Barcode", "Q30_Bases_in_RNA_Read", "Q30_Bases_in_UMI")
+metrics_long <- metrics %>%
+  pivot_longer(cols = all_of(metrics_vec), names_to = "Metric", values_to = "Value")
+
+ggplot(metrics_long, aes(x = cond_tissue, y = Value, fill = tissue)) +
+  geom_bar(stat = "identity", position = position_dodge()) +
+  ylim(0, 1) +
+  facet_wrap(~Metric, labeller = labeller(Metric = c("Q30_Bases_in_Barcode" = "in Barcode", 
+                                                     "Q30_Bases_in_RNA_Read" = "in RNA Read", 
+                                                     "Q30_Bases_in_UMI" = "in UMI"))) +
+  scale_fill_manual(values = palette) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  scale_x_discrete(labels = function(x) sub("-.*", "", x)) + 
+  labs(x = "Sample ID", y = "Q30 Bases (%)")
+```
+
+## Mapping 
+
+Next, we will check the quality of the mapping step. We aim to obtain libraries with a high percentage of confidently mapped reads, and specially a high percentage of exonic reads, which correspond with gene expression or RNAs. The reads mapping to intergenic regions suggest contamination of ambient DNA, whereas reads mapping to intronic regions may come from pre-mRNAs or mature spliced isoforms that retain certain introns.
+
+```{r map, fig.cap="Bar plots showing percentage reads mapped confindently per sample."}
+metrics_vec <- c("Reads_Mapped_Confidently_to_Genome",
+       "Reads_Mapped_Confidently_to_Intergenic_Regions",
+       "Reads_Mapped_Confidently_to_Intronic_Regions", 
+       "Reads_Mapped_Confidently_to_Exonic_Regions")
+metrics_long <- metrics %>%
+  pivot_longer(cols = all_of(metrics_vec), names_to = "Metric", values_to = "Value")
+
+ggplot(metrics_long, aes(x = cond_tissue, y = Value, fill = tissue)) +
+  geom_bar(stat = "identity", position = position_dodge()) +
+  ylim(0, 1) +
+  facet_wrap(~Metric, labeller = labeller(Metric = c("Reads_Mapped_Confidently_to_Genome" = "to genome", 
+                                                     "Reads_Mapped_Confidently_to_Intergenic_Regions" = "to intergenic regions", 
+                                                     "Reads_Mapped_Confidently_to_Intronic_Regions" = "to intronic regions",
+                                                     "Reads_Mapped_Confidently_to_Exonic_Regions" = "to exonic regions"))) +
+  scale_fill_manual(values = palette) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  scale_x_discrete(labels = function(x) sub("-.*", "", x)) + 
+  labs(x = "Sample ID", y = "Reads mapped confidently (%)")
+```
+
+## Sequencing saturation and depth
+
+Now, we will plot the number of detected genes as a function of depth (sequenced reads). As sequencing depth increases, more genes are detected, but this function reaches a plateau, whereby more sequenced reads does not result in more detected genes; therefore, at this point we assure we sequenced until saturation. More specifically, the sequencing saturation the fraction of confidently mapped, valid cell-barcode, valid UMI reads that had a non-unique (cell-barcode, UMI, gene).
+
+As we can see in Figure \@ref(fig:libsize), library sizes range from approximately `r round(min(metrics$Number_of_Reads)/1e6)` million to `r round(max(metrics$Number_of_Reads)/1e6)` million reads, with considerable variation between samples. Also, lymph-node samples have generally greater library sizes.
+
+```{r libsize, fig.height=3, fig.width=6, fig.cap="Bar plots showing library size per sample."}
+ggplot(metrics, aes(x = cond_tissue, y = Number_of_Reads / 1e6, fill = tissue)) +
+  geom_bar(stat = "identity", position = position_dodge()) +
+  scale_fill_manual(values = palette) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  scale_x_discrete(labels = function(x) sub("-.*", "", x)) + 
+  labs(x = "Sample ID", y = "Library size (in millions)")
+```
+
+The Figure \@ref(fig:sat) below shows that, most samples achieved 75-100% saturation regardless of tissue type, indicating that the sequencing depth was generally sufficient. Lymph node samples required higher read depths (150-300k reads/spot) compared to lung samples (50-200k reads/spot) to reach saturation, suggesting different cellular complexity or RNA content between tissues.
+
+```{r sat, fig.cap="Scatterplot showing mean reads per spot by sequencing saturation per sample."}
+ggplot(metrics, aes(x = Mean_Reads_per_Spot / 1e3, y = Sequencing_Saturation, color = tissue)) +
+  geom_point() +
+  ylim(0, 1) +
+  scale_color_manual(values = palette) +
+  geom_text_repel(aes(label = study_id), size = 4) +
+  theme_minimal() +
+  labs(x = "Mean Reads per Spot (in thousands)", 
+       y = "Sequencing Saturation") +
+  NoLegend()
+```
+
+As we can see in Figure \@ref(fig:depthcell), lymph node samples consistently detected more genes per spot than lung samples (1000-2000 genes). Sample `chronic_case_4-lung` is an outlier with exceptionally high gene detection despite moderate sequencing depth.
+
+```{r depthcell, fig.cap="Scatterplot showing mean reads by median detected genes per spot per sample."}
+ggplot(metrics, aes(x = Mean_Reads_per_Spot / 1e3, y = Median_Genes_per_Spot, color = tissue)) +
+  geom_point() +
+  scale_color_manual(values = palette) +
+  geom_text_repel(aes(label = study_id), size = 4) +
+  theme_minimal() +
+  labs(x = "Mean Reads per Spot (in thousands)", 
+       y = "Median Detected Genes per Spot") +
+  NoLegend()
+```
+
+Despite varying sequencing depths (`r round(min(metrics$Number_of_Reads)/1e6)`-`r round(max(metrics$Number_of_Reads)/1e6)`M reads), as we see in Figure \@ref(fig:depth) most samples plateau at detecting 20,000-25,000 total genes, suggesting comprehensive transcriptome coverage. The major outlier is `S317-lymph-node`, which detected only `r metrics$Total_Genes_Detected[metrics$sample_id_tissue == "S317-lymph-node"]` genes despite very high read counts—this may indicate a technical problem requiring investigation in the remaining QC.
+
+```{r depth, fig.cap="Scatterplot showing mean reads by median detected genes per spot per sample."}
+ggplot(metrics, aes(x = Number_of_Reads / 1e6, y = Total_Genes_Detected, color = tissue)) +
+  geom_point() +
+  scale_color_manual(values = palette) +
+  geom_text_repel(aes(label = study_id), size = 4) +
+  theme_minimal() +
+  labs(x = "Library size (in millions)", y = "Total Genes Detected") +
+  NoLegend()
+```
+
+Overall, the data quality appears generally good with adequate saturation, though there's clear biological distinction between tissue types. The `chronic_case_4-lymph-npde` sample show unusual patterns that warrant further QC investigation.
+
+# Visium QC
+
+Now, we will follow with the QC of Visium slides. We previously collected all the samples in a single `SpatialExperiment` object. We made sure that we only have spots overlaying tissue sections. Also, genes detected in 0 spots have been removed. `addPerCellQC()` have also been executed to calculate QC metrics such as mitochondrial and ribosomal content. Now, we will explore these QC metrics to identify potential outlier samples or spots that may need to be excluded from downstream analyses.
+
+## Load data
+
+```{r}
+spe <- loadHDF5SummarizedExperiment(
+  dir = "{st_odt}/0-QC/0-QC_before_spe" %>%
+    glue::glue() %>%
+    here::here()
+)
+spe
+```
+
+The data initially consists of `r nrow(spe)` features (genes) across `r ncol(spe)` spots from all samples.
+
+## QC metrics summary per sample
+
+First, looking at the main QC metrics by sample, we see in Figure \@ref(fig:gen) and Table \@ref(tab:summ) normal distribution of `n_counts` and `n_features` across all samples. It is worth noting that the `prolonged_case_4-lymph-node` and `control_case_1-lung` samples have a high mitochondrial content, spiking toward 20% or even higher. Again, there are some outlier spots reaching up to 40% for ribosomal content, particularly in the `control_case_2-lymph-node` sample.
+
+```{r summ, echo=FALSE, tab.cap="Summary statistics per sample of the main QC metrics."}
+tab <- as.data.frame(colData(spe)) %>%
+  group_by(cond_tissue) %>%
+  summarise(
+    study_id = dplyr::first(study_id),
+    tissue = dplyr::first(tissue),
+    disease_group = dplyr::first(disease_group),
+    n_spots = n(),
+    mean_sum = mean(sum),
+    median_sum = median(sum),
+    sd_sum = sd(sum),
+    mean_detected = mean(detected),
+    median_detected = median(detected),
+    sd_detected = sd(detected),
+    mean_percent_mito = mean(subsets_mito_percent),
+    median_percent_mito = median(subsets_mito_percent),
+    mean_percent_ribo = mean(subsets_ribo_percent),
+    median_percent_ribo = median(subsets_ribo_percent),
+    mean_percent_SCoV2 = mean(subsets_SCoV2_percent),
+    median_percent_SCoV2 = median(subsets_SCoV2_percent),
+    .groups = 'drop')
+
+t_cols <- palette
+s_cols <- setNames(c("#4AE38A", "#168D48","#1F78B4", "#0D542B")
+                   [1:length(unique(tab$disease_group[tab$disease_group != ""]))],
+                   unique(tab$disease_group[tab$disease_group != ""]))
+
+kable(tab[,-1], format = "html", booktabs = TRUE, escape = FALSE,
+      col.names = c("ID","Tissue","Stage","Nº Spots", 
+                    rep(c("Mean", "Median", "SD"), 2),
+                    rep(c( "Mean", "Median"), 3))) %>%
+  scroll_box(width = "100%") %>%
+  kable_styling(bootstrap_options = c("striped", "hover"), 
+                full_width = TRUE, 
+                position = "center") %>%
+  column_spec(1, color = "#404040", bold = TRUE) %>%
+  column_spec(2, color = ifelse(tab$tissue == "", "white", t_cols[tab$tissue]), bold = TRUE) %>%
+  column_spec(3, color = ifelse(tab$disease_group == "", "white", s_cols[tab$disease_group]), bold = TRUE) %>%
+  add_header_above(c(" " = 4, "Nº Counts" = 3 , "Nº Features" = 3, "% Mitochondrial" = 2, "% Ribosomal" = 2, "% S-CoV-2" = 2))
+```
+
+## Global outlier detection
+
+Many commonly used QC methods currently applied to ST were adapted from snRNA-seq workflows, such as global outlier detection. The approach we will follow here is to identify potential low-quality spots based on outlier values for key QC metrics, determined by MAD-based thresholds per sample. Spots that do not meet the thresholds will be considered to be removed from downstream analyses.
+
+### Metrics distribution
+
+```{r generalhist, fig.height=3, fig.width=10, fig.cap="Histograms showing the distribution of main QC metrics across all samples."}
+metrics <- list("sum" = "UMI counts",
+                "detected" = "Genes detected",
+                "subsets_mito_percent" = "Mithocondrial content (%)")
+
+lapply(names(metrics), function(metric){
+  ggplot(as.data.frame(colData(spe)), aes(x = .data[[metric]])) +
+    geom_histogram(fill = "#8fbafa", color = "#07439c") +
+    labs(x = paste(metrics[[metric]], "per spot"), y = "Frequency")  +
+    theme_minimal()
+}) %>%
+  wrap_plots(p_ls, ncol = 3)
+```
+
+Looking at the overall distributions of the main QC metrics across all samples in Figure \@ref(fig:generalhist), we can see that most spots have UMI counts ranging from 0 to approximately 50,000. The number of detected genes per spot also shows a similar distribution, with most spots detecting between 0 to 6,000 genes. The mitochondrial content percentage varies widely among spots, with most spots having low mitochondrial content, but there are also spots with very high mitochondrial percentages, which could indicate low-quality or stressed cells.
+
+We want to focus the QC sample by sample, so we are going to plot the distribution of the main QC metrics again for each sample in Figures \@ref(fig:histqc).
+
+```{r histqc, fig.height=3, fig.width=10, fig.cap="Histograms showing the distribution of main QC metrics per sample."}
+lapply(unique(spe$cond_tissue), function(id){
+  spe_sub <- spe[, spe$cond_tissue == id]
+  
+  lapply(names(metrics), function(metric){
+  ggplot(as.data.frame(colData(spe_sub)), aes(x = .data[[metric]])) +
+    geom_histogram(fill = "#8fbafa", color = "#07439c") +
+    labs(x = paste(metrics[[metric]], "per spot"), y = "Frequency")  +
+    theme_minimal()
+    }) %>%
+    wrap_plots(p_ls, ncol = 3) +
+    plot_annotation(title = id)
+})
+```
+
+We can also take a look at the distribution of this metrics onto space, by sample, in Figures \@ref(fig:spatialqc).
+
+```{r spatialqc, fig.height=6, fig.width=14, dev='svglite', fig.cap="Spatial plots showing the distribution of main QC metrics per sample."}
+lapply(unique(spe$cond_tissue), function(id){
+  spe_sub <- spe[, spe$cond_tissue == id]
+
+  p_ls <- lapply(names(metrics), function(metric){
+    plotVisium(spe_sub, facets = "cond_tissue", annotate = metric) + 
+      guides(fill = guide_colorbar(barwidth = 15, barheight = 1.5)) +
+      ggtitle(metrics[[metric]]) +
+      theme_void() +
+      theme(legend.position = "bottom",
+            legend.title = element_blank(),
+            strip.text = element_blank())
+  })
+  
+  wrap_plots(p_ls, ncol = 3) +
+    plot_annotation(title = id)
+})
+```
+
+We can highlight some interesting cases:
+
+ - **Acute case 1 from lung** tissue has a wide region with very low UMI counts and detected genes, and shows a bimodal distribution for this metrics, which could indicate a technical artifact.
+ - **Chronic case 4 from lymph-node** tissue shows really low UMI counts and detected genes overall, indicating a low-quality sample.
+ - **Prolonged case 4 from lymph-node** tissue shows a wide distribution of mitochondrial content, with some spots having extremely high mitochondrial content. The mean mitochondrial content is also very high compared to all the other samples, around `r round(mean(spe$subsets_mito_percent[spe$cond_tissue == "prolonged_case_4-lymph-node"]))`%. UMI counts and detected genes are also low overall, with a region of more normal values where the mitochondrial content is lower.
+
+### Outliers computation
+
+Now we will proceed with the determination of QC thesholds, to identify low-quality spots to be removed from downstream analyses. We will use the `perCellQCFilters()` function from the `scuttle` package, which internally uses the `isOutlier()` function to identify outliers based on the median absolute deviation (MAD) from the median for each QC metric, per sample.
+
+The default threshold is set to 3 MADs away from the median (`nmad = 3`), which is a commonly used cutoff. 
+
+```{r}
+outliers_ls <- lapply(unique(spe$cond_tissue), function(id) {
+  spe_sub <- spe[, spe$cond_tissue == id]
+  perCellQCFilters(colData(spe_sub)[, c("sum", "detected", "subsets_mito_percent")],
+                   sub.fields = "subsets_mito_percent")
+})
+names(outliers_ls) <- unique(spe$cond_tissue)
+
+# add outlier columns to colData for each sample
+for(id in names(outliers_ls)) {
+  idx <- spe$cond_tissue == id
+  colData(spe)[idx, paste0(id, "_", names(outliers_ls[[id]]))] <- outliers_ls[[id]]
+}
+```
+
+### Outliers visualization
+
+Now that we have identified outlier spots for each QC metric per sample, we can visualize their distribution in space if Figures \@ref(fig:spatialout). This will help us assess whether the outliers are randomly distributed or show any spatial patterns that may indicate technical artifacts or biological relevance.
+
+Removing spotswith an obvious spatial pattern that correlates with known biological features, could indicate that we have set the threshold too high, and are removing biologically informative spots.
+
+```{r spatialout, fig.height=5, fig.width=16, dev='svglite', fig.cap="Spatial plots showing the distribution of outlier spots per sample."}
+metrics <- list("_low_lib_size" = "Low UMI counts",
+                "_low_n_features" = "Low genes detected",
+                "_high_subsets_mito_percent" = "High mithocondrial content (%)",
+                "_discard" = "Overall discard")
+
+lapply(unique(spe$cond_tissue), function(id){
+  spe_sub <- spe[, spe$cond_tissue == id]
+  
+  p_ls <- lapply(names(metrics), function(metric){
+    colData(spe_sub)$discard <- colData(spe_sub)[[paste0(id, metric)]]
+    
+    plotVisium(spe_sub, facets = "cond_tissue", annotate = "discard") +
+      scale_fill_manual(values=c("FALSE" = "#2ecc71", "TRUE" = "#e74c3c")) +
+      ggtitle(metrics[[metric]]) +
+      theme(legend.position = "none",
+            strip.text = element_blank())
+  })
+  
+  wrap_plots(p_ls, ncol = 4, guides = "collect") +
+    scale_fill_manual("discard", values=c("FALSE" = "#2ecc71", "TRUE" = "#e74c3c"),
+                      labels=c("FALSE" = "Keep", "TRUE" = "Filter")) +
+    theme(legend.position = "right") +
+    plot_annotation(title =  id)
+})
+```
+
+In the Figures \@ref(fig:spatialout), we can observe the spatial distribution of outlier spots for each QC metric across different samples. Some samples show a scattered distribution of outliers, while others exhibit more clustered patterns. 
+
+In the Figures \@ref(fig:barout) and \@ref(fig:outliersumm), we summarize the percentage of outlier spots per QC metric and per sample. This provides a clear overview of the extent of low-quality spots identified in each sample based on the defined thresholds.
+
+```{r barout, fig.height=6, fig.width=10, dev='svglite', fig.cap="Bar plots showing the percentage of outlier spots per QC metric and per sample."} }
+summary_ls <- lapply(outliers_ls, function(outliers) {
+  df <- data.frame(
+    check.names = FALSE,
+    Metric = colnames(outliers),
+    `#` = apply(outliers, 2, sum), 
+    `%` = round(100 * apply(outliers, 2, mean), 2)
+  )
+  rownames(df) <- NULL
+  return(df)
+})
+names(summary_ls) <- names(outliers_ls)
+
+do.call(rbind, lapply(names(summary_ls), function(id) {
+  summary_ls[[id]]$sample <- id
+  summary_ls[[id]] 
+  })) %>% 
+  filter(Metric != "discard") %>%
+  mutate(Metric = factor(Metric, 
+                         levels = c("low_lib_size", "low_n_features", "high_subsets_mito_percent"),
+                         labels = c("Low UMI counts", "Low genes detected", "High mithocondrial content (%)"))) %>%
+  ggplot(aes(x = sample, y = `%`, fill = Metric)) +
+  geom_bar(stat = "identity") +
+  facet_wrap(~Metric, ncol = 1) +
+  scale_fill_manual(values = c("High mithocondrial content (%)" = "#9b59b6",
+                               "Low UMI counts" = "#128af3", 
+                               "Low genes detected" = "#f39c12")) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5),
+        legend.position = "none") +
+  labs(x = "Sample", y = "Outlier spots (%)")
+```
+
+```{r outliersumm, fig.height=4, fig.width=8, dev='svglite', tab.cap="Bar plots showing the percentage of spots to filter and to retain per sample."}
+do.call(rbind, lapply(names(summary_ls), function(id) {
+  summary_ls[[id]]$sample <- id
+  summary_ls[[id]] 
+  })) %>% 
+  filter(Metric == "discard") %>%
+  mutate(retained = 100 - `%`) %>%
+  pivot_longer(cols = c(`%`, retained), 
+               names_to = "status", 
+               values_to = "percentage") %>%
+  mutate(status = ifelse(status == "%", "Discarded", "Retained")) %>%
+  ggplot(aes(x = sample, y = percentage, fill = status)) +
+  geom_bar(stat = "identity") +
+  scale_fill_manual(values = c("Discarded" = "#e74c3c", "Retained" = "#2ecc71")) +
+  theme_void() +
+  theme(axis.text = element_text(color = "black", size = 10),
+        axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5),
+        axis.title = element_text(color = "black", size = 11),
+        axis.title.y = element_text(angle = 90),
+        legend.text = element_text(size = 9),
+        legend.title = element_text(size = 10)) +
+  labs(x = "Sample", y = "Outlier spots (%)", fill = "QC Status")
+```
+
+Additionally, in the Figurea \@ref(fig:violinout), we can visualize the distribution of the main QC metrics per sample using violin plots, with outliers annotated. This helps us assess whether the thresholds we have chosen are appropriate or if they are excluding too many spots.
+
+```{r violinout, fig.height=4, fig.width=10, dev='svglite', fig.cap="Violin plots showing the distribution of main QC metrics per sample with outliers annotated."}
+metrics <- metrics[-4]
+lapply(unique(spe$cond_tissue), function(id){
+  spe_sub <- spe[, spe$cond_tissue == id]
+  
+  p_ls <- lapply(names(metrics), function(metric){
+    colData(spe_sub)$metric <- colData(spe_sub)[[paste0(id, metric)]]
+    
+    ggplot(as.data.frame(colData(spe_sub)), aes(x = factor(0), y = .data[[ifelse(metric == "_high_subsets_mito_percent", "subsets_mito_percent", 
+                                                  ifelse(metric == "_low_n_features", "detected", "sum"))]], 
+                             color = metric)) +
+      geom_violin(fill = "#8fbafa", color = "#07439c", alpha = 0.5) +
+      geom_jitter(aes(color = metric), width = 0.1, size = 0.5, alpha = 0.7) +
+      scale_color_manual(values=c("FALSE" = "#07439c", "TRUE" = "#e74c3c")) +
+      labs(x = metrics[[metric]]) +
+      theme_minimal()
+  })
+  
+  wrap_plots(p_ls, ncol = 3, guides = "collect") +
+    plot_annotation(title = id)
+})
+```
+
+
+## Discussion
+
+Overall, the thresholds applied appear to be effective in flagging low-quality spots, although some samples may require further investigation to ensure that biologically relevant data is not inadvertently discarded.
+
+Regarding lung samples, we are appropriately identifying low-quality spots without removing biologically informative data, except for **chronic case 4**, which shows a spatial pattern of outliers.
+
+On the other hand, lymph-node samples such as **control case 2** and **acute case 3** also show a spatial patten of outliers, suggesting that we may need to adjust the `nmad` for these samples. In the first case, it could be due to truly low-Q spots.
+
+**Chronic case 1** ouliers also indicate that we should consider adjusting the `nmad` parameter for this sample, or directly to don't filter any spots, as the outliers have anyway really good QC metrics. Ideally, by being less stringent we could retain more biologically relevant data.
+
+Lastly, **chronic case 4** and **prolonged case 4** samples have an overall bad quality, with low UMI counts and detected genes across most spots. These should be considered for exclusion from downstream analyses. 
+
+## Remove low-quality spots
+
+Finally, we combine the sets of low-quality spots identified by each QC metric, and remove them from the `SpatialExperiment` object.
+
+```{r}
+# combine global outliers
+#spe$global_outliers <- 
+#  spe$qc_lib_size | spe$qc_detected | spe$qc_mito
+#table(spe$global_outliers)
+
+# remove combined set of low-quality spots
+#spe <- spe[, !spe$discard]
+#dim(spe)
+```
+
+# Session Information
+
+```{r}
+sessionInfo()
+```
