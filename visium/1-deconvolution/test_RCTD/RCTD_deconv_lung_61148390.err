@@ -1,0 +1,326 @@
+here() starts at /scratch_isilon/groups/singlecell/shared/projects/covid-pascual-reguant
+── Attaching core tidyverse packages ──────────────────────── tidyverse 2.0.0 ──
+✔ dplyr     1.2.0     ✔ readr     2.2.0
+✔ forcats   1.0.1     ✔ stringr   1.6.0
+✔ ggplot2   4.0.2     ✔ tibble    3.3.1
+✔ lubridate 1.9.5     ✔ tidyr     1.3.2
+✔ purrr     1.2.1     
+── Conflicts ────────────────────────────────────────── tidyverse_conflicts() ──
+✖ dplyr::filter() masks stats::filter()
+✖ dplyr::lag()    masks stats::lag()
+ℹ Use the conflicted package (<http://conflicted.r-lib.org/>) to force all conflicts to become errors
+Loading required package: SeuratObject
+Loading required package: sp
+
+Attaching package: ‘SeuratObject’
+
+The following objects are masked from ‘package:base’:
+
+    intersect, t
+
+Loading required package: SummarizedExperiment
+Loading required package: MatrixGenerics
+Loading required package: matrixStats
+
+Attaching package: ‘matrixStats’
+
+The following object is masked from ‘package:dplyr’:
+
+    count
+
+
+Attaching package: ‘MatrixGenerics’
+
+The following objects are masked from ‘package:matrixStats’:
+
+    colAlls, colAnyNAs, colAnys, colAvgsPerRowSet, colCollapse,
+    colCounts, colCummaxs, colCummins, colCumprods, colCumsums,
+    colDiffs, colIQRDiffs, colIQRs, colLogSumExps, colMadDiffs,
+    colMads, colMaxs, colMeans2, colMedians, colMins, colOrderStats,
+    colProds, colQuantiles, colRanges, colRanks, colSdDiffs, colSds,
+    colSums2, colTabulates, colVarDiffs, colVars, colWeightedMads,
+    colWeightedMeans, colWeightedMedians, colWeightedSds,
+    colWeightedVars, rowAlls, rowAnyNAs, rowAnys, rowAvgsPerColSet,
+    rowCollapse, rowCounts, rowCummaxs, rowCummins, rowCumprods,
+    rowCumsums, rowDiffs, rowIQRDiffs, rowIQRs, rowLogSumExps,
+    rowMadDiffs, rowMads, rowMaxs, rowMeans2, rowMedians, rowMins,
+    rowOrderStats, rowProds, rowQuantiles, rowRanges, rowRanks,
+    rowSdDiffs, rowSds, rowSums2, rowTabulates, rowVarDiffs, rowVars,
+    rowWeightedMads, rowWeightedMeans, rowWeightedMedians,
+    rowWeightedSds, rowWeightedVars
+
+Loading required package: GenomicRanges
+Loading required package: stats4
+Loading required package: BiocGenerics
+Loading required package: generics
+
+Attaching package: ‘generics’
+
+The following object is masked from ‘package:lubridate’:
+
+    as.difftime
+
+The following object is masked from ‘package:dplyr’:
+
+    explain
+
+The following objects are masked from ‘package:base’:
+
+    as.difftime, as.factor, as.ordered, intersect, is.element, setdiff,
+    setequal, union
+
+
+Attaching package: ‘BiocGenerics’
+
+The following object is masked from ‘package:dplyr’:
+
+    combine
+
+The following objects are masked from ‘package:stats’:
+
+    IQR, mad, sd, var, xtabs
+
+The following objects are masked from ‘package:base’:
+
+    anyDuplicated, aperm, append, as.data.frame, basename, cbind,
+    colnames, dirname, do.call, duplicated, eval, evalq, Filter, Find,
+    get, grep, grepl, is.unsorted, lapply, Map, mapply, match, mget,
+    order, paste, pmax, pmax.int, pmin, pmin.int, Position, rank,
+    rbind, Reduce, rownames, sapply, saveRDS, table, tapply, unique,
+    unsplit, which.max, which.min
+
+Loading required package: S4Vectors
+
+Attaching package: ‘S4Vectors’
+
+The following objects are masked from ‘package:lubridate’:
+
+    second, second<-
+
+The following objects are masked from ‘package:dplyr’:
+
+    first, rename
+
+The following object is masked from ‘package:tidyr’:
+
+    expand
+
+The following object is masked from ‘package:utils’:
+
+    findMatches
+
+The following objects are masked from ‘package:base’:
+
+    expand.grid, I, unname
+
+Loading required package: IRanges
+
+Attaching package: ‘IRanges’
+
+The following object is masked from ‘package:sp’:
+
+    %over%
+
+The following object is masked from ‘package:lubridate’:
+
+    %within%
+
+The following objects are masked from ‘package:dplyr’:
+
+    collapse, desc, slice
+
+The following object is masked from ‘package:purrr’:
+
+    reduce
+
+The following object is masked from ‘package:glue’:
+
+    trim
+
+Loading required package: Seqinfo
+Loading required package: Biobase
+Welcome to Bioconductor
+
+    Vignettes contain introductory material; view with
+    'browseVignettes()'. To cite Bioconductor, see
+    'citation("Biobase")', and for packages 'citation("pkgname")'.
+
+
+Attaching package: ‘Biobase’
+
+The following object is masked from ‘package:MatrixGenerics’:
+
+    rowMedians
+
+The following objects are masked from ‘package:matrixStats’:
+
+    anyMissing, rowMedians
+
+
+Attaching package: ‘SummarizedExperiment’
+
+The following object is masked from ‘package:Seurat’:
+
+    Assays
+
+The following object is masked from ‘package:SeuratObject’:
+
+    Assays
+
+Loading required package: SparseArray
+Loading required package: Matrix
+
+Attaching package: ‘Matrix’
+
+The following object is masked from ‘package:S4Vectors’:
+
+    expand
+
+The following objects are masked from ‘package:tidyr’:
+
+    expand, pack, unpack
+
+Loading required package: S4Arrays
+Loading required package: abind
+
+Attaching package: ‘S4Arrays’
+
+The following object is masked from ‘package:abind’:
+
+    abind
+
+The following object is masked from ‘package:base’:
+
+    rowsum
+
+Loading required package: DelayedArray
+
+Attaching package: ‘DelayedArray’
+
+The following object is masked from ‘package:purrr’:
+
+    simplify
+
+The following objects are masked from ‘package:base’:
+
+    apply, scale, sweep
+
+Loading required package: h5mread
+Loading required package: rhdf5
+
+Attaching package: ‘h5mread’
+
+The following object is masked from ‘package:rhdf5’:
+
+    h5ls
+
+Loading required package: scuttle
+Number of cells in reference: 31805
+Number of genes in reference: 38720
+
+                         AdvF                     Aerocytes 
+                         1616                          1560 
+                         AlvF Anti-inflammatory Macrophages 
+                         1277                          4061 
+                 Arterial ECs                           AT1 
+                          950                          3826 
+                          AT2                       B cells 
+                         2765                            36 
+                  Basal cells                Ciliated cells 
+                          469                          1200 
+                   Club cells                           DCs 
+                          629                            52 
+                        gCaps      Inflammatory Macrophages 
+                         4049                          1396 
+                Lymphatic ECs     Macrophages (SARS-CoV-2+) 
+                          797                           230 
+                   Mast cells                     Monocytes 
+                           29                          1331 
+                     NK cells                           PCs 
+                          503                           504 
+                    Pericytes                           SMC 
+                          836                          1266 
+                      T cells                    Venous ECs 
+                          743                          1680 
+Getting regression differentially expressed genes: 
+AdvF found DE genes: 223
+Aerocytes found DE genes: 284
+AlvF found DE genes: 303
+Anti-inflammatory Macrophages found DE genes: 314
+Arterial ECs found DE genes: 275
+AT1 found DE genes: 320
+AT2 found DE genes: 234
+B cells found DE genes: 452
+Basal cells found DE genes: 250
+Ciliated cells found DE genes: 491
+Club cells found DE genes: 218
+DCs found DE genes: 371
+gCaps found DE genes: 294
+Inflammatory Macrophages found DE genes: 299
+Lymphatic ECs found DE genes: 259
+Macrophages (SARS-CoV-2+) found DE genes: 317
+Mast cells found DE genes: 456
+Monocytes found DE genes: 292
+NK cells found DE genes: 302
+PCs found DE genes: 312
+Pericytes found DE genes: 312
+SMC found DE genes: 285
+T cells found DE genes: 293
+Venous ECs found DE genes: 284
+Total DE genes: 3700
+Getting bulk differentially expressed genes: 
+AdvF found DE genes: 462
+Aerocytes found DE genes: 524
+AlvF found DE genes: 574
+Anti-inflammatory Macrophages found DE genes: 641
+Arterial ECs found DE genes: 518
+AT1 found DE genes: 574
+AT2 found DE genes: 503
+B cells found DE genes: 948
+Basal cells found DE genes: 553
+Ciliated cells found DE genes: 813
+Club cells found DE genes: 457
+DCs found DE genes: 753
+gCaps found DE genes: 528
+Inflammatory Macrophages found DE genes: 613
+Lymphatic ECs found DE genes: 479
+Macrophages (SARS-CoV-2+) found DE genes: 695
+Mast cells found DE genes: 920
+Monocytes found DE genes: 670
+NK cells found DE genes: 649
+PCs found DE genes: 648
+Pericytes found DE genes: 531
+SMC found DE genes: 483
+T cells found DE genes: 674
+Venous ECs found DE genes: 482
+Total DE genes: 5828
+Warning messages:
+1: In getCounts(spatial_experiment, spatial_name) :
+  Multiple assays in spatial_experiment. Choosing 'counts' assay.
+2: In getCounts(reference_experiment, ref_name) :
+  Multiple assays in reference_experiment. Choosing 'counts' assay.
+3: In asMethod(object) :
+  sparse->dense coercion: allocating vector of size 1.2 GiB
+4: In asMethod(object) :
+  sparse->dense coercion: allocating vector of size 1.1 GiB
+5: In asMethod(object) :
+  sparse->dense coercion: allocating vector of size 1.2 GiB
+fitBulk: decomposing bulk
+chooseSigma: using initial Q_mat with sigma = 1
+Likelihood value: 1966513.47186911
+Sigma value: 0.84
+Likelihood value: 1945359.11857561
+Sigma value: 0.69
+Likelihood value: 1931581.07329032
+Sigma value: 0.61
+Likelihood value: 1927244.3709903
+Sigma value: 0.55
+Likelihood value: 1925602.93302317
+Sigma value: 0.53
+Likelihood value: 1925388.93423351
+Sigma value: 0.52
+Likelihood value: 1925347.33871394
+Sigma value: 0.52
+Warning message:
+In getCounts(spatial_experiment, spatial_name) :
+  Multiple assays in spatial_experiment. Choosing 'counts' assay.
