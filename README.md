@@ -1,8 +1,8 @@
-# PAPER TITLE
+# Multimodal spatial profiling suggests self-sustaining immunopathology programs across the lung–draining lymph node axis in severe COVID-19
 
 This repository contains the analysis code for the study:
 
-> **PAPER TITLE**  
+> **Multimodal spatial profiling suggests self-sustaining immunopathology programs across the lung–draining lymph node axis in severe COVID-19**  
 > Clàudia Vicente-Comorera, Anna Pascual-Reguant   
 > *Spatial Genomics Team, CNAG*
 > 
