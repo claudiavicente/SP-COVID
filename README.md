@@ -10,7 +10,7 @@ This repository contains the analysis code for the study:
 
 ## Overview
 
-This study integrates Spatial Transcriptomics, single-nucleus RNA sequencing, and spatial T cell receptor sequencing from patient-matched lung and draining lymph node tissue to characterize the spatial organization of adaptive immune responses across acute, chronic, and prolonged COVID-19 disease stages, benchmarked against bacterial pneumonia controls.
+This study integrates Spatial Transcriptomics, single-nucleus RNA sequencing, and spatial T cell receptor sequencing from patient-matched lung and draining lymph node tissue to characterize the spatial organization of adaptive immune responses across acute, chronic, and prolonged COVID-19 disease stages.
 
 Analyses include quality control and processing of snRNA-seq and ST data, cell-type annotation, spatial domain identification, cell-type deconvolution (`SPOTlight`), compositional analysis (`sccomp`), spatially resolved cell-cell communication inference (`LIANA+`/NMF), and exploratory spatial TCR clonotype analysis.
 
